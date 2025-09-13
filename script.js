@@ -1031,6 +1031,73 @@ GrowthChartPlotter.prototype.handleMultiPlot = function() {
     const multiContainer = document.getElementById('multiChartsContainer');
     if (!multiContainer) return; multiContainer.innerHTML='';
     const selectedKey = document.getElementById('sex').value || this.currentSex; const baseSex = selectedKey.startsWith('Girl')?'Girl':'Boy';
+    // Helper: compute Weight-for-Height % using P50 inversion method
+    const computeWeightForHeightPercent = async (sexBase, targetHeight, currentWeight) => {
+        if (isNaN(targetHeight) || isNaN(currentWeight)) return null;
+        // Candidate age chart keys (prefer broader 2-19 first for most heights)
+        const candidates = [`${sexBase}_2_19`, `${sexBase}_0_2`];
+        let chosenKey=null, chosenCfg=null;
+        for (const k of candidates) {
+            const cfg = CHART_CONFIGS[k];
+            if (!cfg) continue;
+            if (cfg.chartType !== 'AGE') continue;
+            const hMin = Math.min(cfg.heightRef1, cfg.heightRef2);
+            const hMax = Math.max(cfg.heightRef1, cfg.heightRef2);
+            if (targetHeight >= hMin && targetHeight <= hMax) { chosenKey=k; chosenCfg=cfg; break; }
+        }
+        if (!chosenKey) { // fallback to first existing AGE chart
+            for (const k of candidates) { if (CHART_CONFIGS[k] && CHART_CONFIGS[k].chartType==='AGE'){ chosenKey=k; chosenCfg=CHART_CONFIGS[k]; break; } }
+        }
+        if (!chosenKey || !chosenCfg) return null;
+        try {
+            const curves = await loadCurvesForChartKey(chosenKey);
+            if (!curves) return null;
+            const height50 = Object.values(curves).find(c=>c.type==='height' && c.percentile==='P50');
+            const weight50 = Object.values(curves).find(c=>c.type==='weight' && c.percentile==='P50');
+            if (!height50 || !weight50) return null;
+            // Mapping helpers (pixel -> domain)
+            const pxToAge = (px) => {
+                // Prefer weight X anchors if present, else height anchors
+                const x1 = chosenCfg.weightXRef1 ?? chosenCfg.heightXRef1;
+                const x2 = chosenCfg.weightXRef2 ?? chosenCfg.heightXRef2;
+                return chosenCfg.ageRef1 + (px - x1) * (chosenCfg.ageRef2 - chosenCfg.ageRef1) / (x2 - x1);
+            };
+            const pyToHeight = (py) => {
+                return chosenCfg.heightRef1 + (py - chosenCfg.heightYRef1) * (chosenCfg.heightRef2 - chosenCfg.heightRef1) / (chosenCfg.heightYRef2 - chosenCfg.heightYRef1);
+            };
+            const pyToWeight = (py) => {
+                return chosenCfg.weightRef1 + (py - chosenCfg.weightYRef1) * (chosenCfg.weightRef2 - chosenCfg.weightRef1) / (chosenCfg.weightYRef2 - chosenCfg.weightYRef1);
+            };
+            // Build ordered domain arrays for height50
+            const hPts = height50.points.map(p=>({ age:pxToAge(p.x), height:pyToHeight(p.y) })).sort((a,b)=>a.age-b.age);
+            // Ensure height monotonic assumption for inversion: search for segment containing targetHeight
+            let ageAtMedianHeight=null;
+            for (let i=0;i<hPts.length-1;i++) {
+                const h1=hPts[i].height, h2=hPts[i+1].height;
+                // Check if targetHeight lies between (inclusive) regardless of direction
+                if ((targetHeight>=Math.min(h1,h2)) && (targetHeight<=Math.max(h1,h2)) && h1!==h2) {
+                    const frac=(targetHeight - h1)/(h2 - h1);
+                    ageAtMedianHeight = hPts[i].age + frac*(hPts[i+1].age - hPts[i].age);
+                    break;
+                }
+            }
+            if (ageAtMedianHeight===null) return null; // outside range
+            // Interpolate weight P50 at that age
+            const wPts = weight50.points.map(p=>({ age:pxToAge(p.x), weight:pyToWeight(p.y) })).sort((a,b)=>a.age-b.age);
+            let weight50AtAge=null;
+            for (let i=0;i<wPts.length-1;i++) {
+                const a1=wPts[i].age, a2=wPts[i+1].age;
+                if (ageAtMedianHeight>=a1 && ageAtMedianHeight<=a2 && a1!==a2) {
+                    const frac=(ageAtMedianHeight - a1)/(a2 - a1);
+                    weight50AtAge = wPts[i].weight + frac*(wPts[i+1].weight - wPts[i].weight);
+                    break;
+                }
+            }
+            if (weight50AtAge===null || weight50AtAge<=0) return null;
+            const percent = (currentWeight / weight50AtAge) * 100;
+            return { ageAtMedianHeight, weight50AtAge, percent, sourceChart: chosenKey };
+        } catch(e){ console.warn('WFH% computation error', e); return null; }
+    };
     const applicable = Object.entries(CHART_CONFIGS).filter(([key,cfg])=>{
         if(!key.startsWith(baseSex)) return false;
         // Age gating per chart type
@@ -1101,18 +1168,51 @@ GrowthChartPlotter.prototype.handleMultiPlot = function() {
                     if(typeof x!=='undefined' && weightY!==null){
                         const scaledX = x * (canvas.width / img.naturalWidth);
                         const scaledWeightY=weightY*(canvas.height/ img.naturalHeight);
+                        // Draw primary (weight/head) point
                         ctx.fillStyle=(cfg.chartType==='HC')?'#800080':'#ff0000';
                         ctx.beginPath(); ctx.arc(scaledX,scaledWeightY,5,0,2*Math.PI); ctx.fill();
+                        ctx.font='10px Arial'; ctx.textBaseline='middle';
+                        // Domain labels: Age, Weight, Height, HC
+                        if(cfg.chartType==='AGE'){
+                            const ageYears = age.toFixed(2).replace(/\.00$/,'');
+                            const wLabel=`Age ${ageYears}y, W ${weight}kg`;
+                            ctx.fillStyle='#ff0000'; ctx.fillText(wLabel, scaledX+10, scaledWeightY-8);
+                        } else if(cfg.chartType==='WFH') {
+                            const wLabel=`Ht ${height}cm, W ${weight}kg`;
+                            ctx.fillStyle='#ff0000'; ctx.fillText(wLabel, scaledX+10, scaledWeightY-8);
+                        } else if(cfg.chartType==='HC') {
+                            const hcLabel=`Age ${age.toFixed(2)}y, HC ${headCircumference}cm`;
+                            ctx.fillStyle='#800080'; ctx.fillText(hcLabel, scaledX+10, scaledWeightY-8);
+                        }
                         if(cfg.chartType==='AGE' && heightY!==null){
                             const scaledHeightY=heightY*(canvas.height/ img.naturalHeight);
                             ctx.fillStyle='#0066cc'; ctx.beginPath(); ctx.arc(scaledX,scaledHeightY,5,0,2*Math.PI); ctx.fill();
                             ctx.strokeStyle='#666'; ctx.setLineDash([2,2]); ctx.beginPath(); ctx.moveTo(scaledX,scaledWeightY); ctx.lineTo(scaledX,scaledHeightY); ctx.stroke(); ctx.setLineDash([]);
+                            // Include age in height label for consistency with weight label
+                            const ageYears = age.toFixed(2).replace(/\.00$/,'');
+                            const hLabel=`Age ${ageYears}y, Ht ${height}cm`;
+                            ctx.fillStyle='#0066cc'; ctx.fillText(hLabel, scaledX+10, scaledHeightY+8);
                         }
                     }
                     let weightPct=null, heightPct=null; if(curves && typeof x!=='undefined' && weightY!==null){ if(cfg.chartType==='HC'){ weightPct=calculatePercentileFromCurves(curves,x,weightY,'head'); } else { weightPct=calculatePercentileFromCurves(curves,x,weightY,'weight'); if(cfg.chartType==='AGE' && heightY!==null){ heightPct=calculatePercentileFromCurves(curves,x,heightY,'height'); } } }
                     const metricsRow=document.createElement('div'); metricsRow.style.display='flex'; metricsRow.style.flexWrap='wrap'; metricsRow.style.gap='6px';
                     const buildBadge=(label,result)=>{ if(!result) return null; let text; if(result.type==='extreme'&&result.displayPercentile) text=`${label}: ${result.displayPercentile}`; else { text=`${label}: P${result.percentile.toFixed(1)}`; if(result.type==='range'||result.type==='interpolated_with_range') text+=` (${result.range})`; } const badge=document.createElement('span'); badge.textContent=text; badge.style.fontSize='11px'; badge.style.padding='3px 6px'; badge.style.borderRadius='12px'; badge.style.background='#eef2f7'; badge.style.border='1px solid #d0d7de'; badge.style.lineHeight='1.2'; const accent=label.startsWith('W/H')?'#6f42c1':(label.startsWith('Head')?'#800080':(label.startsWith('Height')?'#0066cc':'#ff0000')); badge.style.boxShadow=`inset 0 0 0 2px ${accent}20`; if(result.percentile!==undefined){ const p=result.percentile; if(p<3||p>97) badge.style.background='#ffe5e5'; else if(p<10||p>90) badge.style.background='#ffeccc'; else if(p>=25&&p<=75) badge.style.background='#e2f7e2'; } return badge; };
-                    if(cfg.chartType==='HC') metricsRow.appendChild(buildBadge('Head',weightPct)); else if(cfg.chartType==='WFH') metricsRow.appendChild(buildBadge('W/H',weightPct)); else { metricsRow.appendChild(buildBadge('Weight',weightPct)); metricsRow.appendChild(buildBadge('Height',heightPct)); }
+                    if(cfg.chartType==='HC') metricsRow.appendChild(buildBadge('Head',weightPct)); 
+                    else if(cfg.chartType==='WFH') {
+                        metricsRow.appendChild(buildBadge('W/H',weightPct));
+                        const above97 = (weightPct && ((weightPct.percentile && weightPct.percentile>97) || (weightPct.type==='extreme' && weightPct.displayPercentile && weightPct.displayPercentile.indexOf('>P97')!==-1)));
+                        if (above97) {
+                            computeWeightForHeightPercent(baseSex, height, weight).then(ratioInfo=>{
+                                if (!ratioInfo) return;
+                                const badge=document.createElement('span');
+                                const pct = ratioInfo.percent.toFixed(0);
+                                badge.textContent = `W/H%: ${pct}% (vs P50 wt @ Age ${ratioInfo.ageAtMedianHeight.toFixed(2)}y)`;
+                                badge.style.fontSize='11px'; badge.style.padding='3px 6px'; badge.style.borderRadius='12px'; badge.style.background='#f0eefc'; badge.style.border='1px solid #d0d7de'; badge.style.lineHeight='1.2'; badge.style.boxShadow='inset 0 0 0 2px #6f42c120';
+                                if (ratioInfo.percent>130) badge.style.background='#ffe5e5'; else if (ratioInfo.percent>120) badge.style.background='#ffeccc';
+                                metricsRow.appendChild(badge);
+                            });
+                        }
+                    } else { metricsRow.appendChild(buildBadge('Weight',weightPct)); metricsRow.appendChild(buildBadge('Height',heightPct)); }
                     card.appendChild(metricsRow);
                     if(weightPct) aggregate.push({chart:key, measure: cfg.chartType==='HC'?'Head':(cfg.chartType==='WFH'?'W/H':'Weight'), result:weightPct});
                     if(heightPct) aggregate.push({chart:key, measure:'Height', result:heightPct});
