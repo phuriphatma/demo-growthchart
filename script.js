@@ -1,35 +1,5 @@
 // Chart configurations for both boys and girls
 const CHART_CONFIGS = {
-    Boy: {
-        imageSrc: 'Weight-and-height_Boys_2-19-years.png',
-        curvesDataSrc: 'magnetic_curves_webapp.json',
-        curveArrayOrder: {
-            height: ['P97','P90','P75','P50','P25','P10','P3'],
-            weight: ['P3','P10','P25','P50','P75','P90','P97']
-        },
-        minAge: 2,
-        maxAge: 19,
-        chartType: 'AGE',
-        // Weight reference points: (age 2, 5kg) = (236, 3307), (age 19, 90kg) = (2244.5, 1453.5)
-        ageRef1: 2,
-        weightRef1: 5,
-        weightXRef1: 236,
-        weightYRef1: 3307,
-        
-        ageRef2: 19,
-        weightRef2: 90,
-        weightXRef2: 2244.5,
-        weightYRef2: 1453.5,
-        
-        // Height reference points: (age 2, 85cm) = (236, 2762), (age 19, 190cm) = (2244.5, 472.5)
-        heightRef1: 85,
-        heightXRef1: 236,
-        heightYRef1: 2762,
-        
-        heightRef2: 190,
-        heightXRef2: 2244.5,
-        heightYRef2: 472.5
-    },
     Girl: {
         imageSrc: 'Thai Growth Chart Girls 2-19 Years.png',
         curvesDataSrc: 'thai_growth_chart_girls_2_19_years_curves.json',
@@ -41,7 +11,7 @@ const CHART_CONFIGS = {
         },
         minAge: 2,
         maxAge: 19,
-    chartType: 'AGE',
+        chartType: 'AGE',
         // Weight reference points: (age 2, 5kg) = (236, 3307), (age 19, 90kg) = (2245, 1299)
         ageRef1: 2,
         weightRef1: 5,
@@ -62,6 +32,35 @@ const CHART_CONFIGS = {
         heightXRef2: 2245,
         heightYRef2: 472.5
     },
+    // Boy 2-19 years chart configuration (added). ASSUMPTION: Using same reference anchors as Girl chart until exact boy anchors provided.
+    // If you have precise pixel anchors for (age, weight) & (age, height) for the boys chart image, replace the ageRef/weightRef/heightRef sets below.
+    Boy: {
+        imageSrc: 'Weight-and-height_Boys_2-19-years.png', // Existing boys 2-19 image in repo
+        curvesDataSrc: 'thai_growth_chart_boys_2_19_years_curves.json', // Expected file (will fallback to girls if not found)
+        curveArrayOrder: {
+            height: ['P97','P90','P75','P50','P25','P10','P3'],
+            weight: ['P97','P90','P75','P50','P25','P10','P3']
+        },
+        minAge: 2,
+        maxAge: 19,
+        chartType: 'AGE',
+        // TEMPORARY ANCHORS (borrowed from Girl config as placeholder):
+        ageRef1: 2,
+        weightRef1: 5,      // Replace with actual boy 2y 5kg pixel anchor if different
+        weightXRef1: 236,
+        weightYRef1: 3307,
+        ageRef2: 19,
+        weightRef2: 90,
+        weightXRef2: 2245,
+        weightYRef2: 1299,
+        // Height refs (placeholder):
+        heightRef1: 85,
+        heightXRef1: 236,
+        heightYRef1: 2717,
+        heightRef2: 180,
+        heightXRef2: 2245,
+        heightYRef2: 472.5
+    },
     Girl_0_2: {
         imageSrc: 'Thai Growth Chart Girls 0-2 Years.png',
         curvesDataSrc: 'thai_growth_chart_girls_0_2_years_curves.json',
@@ -72,7 +71,7 @@ const CHART_CONFIGS = {
         },
         minAge: 0,
         maxAge: 2,
-    chartType: 'AGE',
+        chartType: 'AGE',
         // Provided reference points (age in months converted to years for age mapping):
         // (age 0 months, 2kg) = (236,3307), (age 24 months, 15kg) = (2245,1705)
         ageRef1: 0, // years
@@ -100,7 +99,7 @@ const CHART_CONFIGS = {
         },
         minAge: 0,
         maxAge: 2,
-    chartType: 'AGE',
+        chartType: 'AGE',
     // Provided reference points (age 0 months, 2kg)=(236,3307), (age24 months,15kg)=(2245,1705)
         // Provided reference points (age 0 months, 2kg)=(236,3307), (age24 months,15kg)=(2245,1705)
         ageRef1: 0,
@@ -212,6 +211,145 @@ const CHART_CONFIGS = {
         headYRef2: 472.5
     }
 };
+
+// Cache for curves per chart key (normalized like calibration manager but isolated per chart image)
+const CHART_CURVES_CACHE = {};
+
+async function loadCurvesForChartKey(chartKey) {
+    if (CHART_CURVES_CACHE[chartKey]) return CHART_CURVES_CACHE[chartKey];
+    const cfg = CHART_CONFIGS[chartKey];
+    if (!cfg || !cfg.curvesDataSrc) return null;
+    try {
+        let resp = await fetch(cfg.curvesDataSrc);
+        // Fallback: if Boy 2-19 curves file missing, temporarily reuse Girl curves (structure compatible)
+        if (!resp.ok && chartKey === 'Boy') {
+            console.warn(`Boy curves file ${cfg.curvesDataSrc} missing (${resp.status}); falling back to girl curves dataset.`);
+            const girlCfg = CHART_CONFIGS['Girl'];
+            if (girlCfg) {
+                resp = await fetch(girlCfg.curvesDataSrc);
+            }
+        }
+        if (!resp.ok) throw new Error(`Fetch ${cfg.curvesDataSrc} failed (${resp.status})`);
+        const rawData = await resp.json();
+        let normalized = {};
+        if (rawData.curves) {
+            if (Array.isArray(rawData.curves)) {
+                const arr = rawData.curves;
+                const order = cfg.curveArrayOrder || {};
+                const hasHeadOnly = order.head && Object.keys(order).length === 1;
+                if (hasHeadOnly) {
+                    order.head.forEach((pct,i)=>{ normalized[`head-${pct}`] = {points: arr[i], percentile: pct, type:'head'}; });
+                } else if (order.height && order.weight && (order.height.length + order.weight.length) === arr.length) {
+                    order.height.forEach((pct,i)=>{ normalized[`height-${pct}`] = {points: arr[i], percentile: pct, type:'height'}; });
+                    order.weight.forEach((pct,i)=>{ normalized[`weight-${pct}`] = {points: arr[order.height.length + i], percentile: pct, type:'weight'}; });
+                } else {
+                    // Fallback heuristic similar to calibration loader
+                    if (arr.length === 14) {
+                        const pctH = ['P97','P90','P75','P50','P25','P10','P3'];
+                        const pctW = ['P3','P10','P25','P50','P75','P90','P97'];
+                        for (let i=0;i<7;i++) normalized[`height-${pctH[i]}`] = {points: arr[i], percentile:pctH[i], type:'height'};
+                        for (let i=0;i<7;i++) normalized[`weight-${pctW[i]}`] = {points: arr[7+i], percentile:pctW[i], type:'weight'};
+                    } else {
+                        arr.forEach((pts,i)=>{ normalized[`curve-${i}`]={points:pts, percentile:'P50', type:'weight'}; });
+                    }
+                }
+            } else {
+                normalized = rawData.curves; // already object
+            }
+        }
+        // Normalize point objects
+        const fitted = {};
+        Object.entries(normalized).forEach(([id,data])=>{
+            const pts = (data.points||data).map(p=>({x:p[0], y:p[1]}));
+            fitted[id] = {points: pts, percentile: data.percentile || 'P50', type: data.type || (id.startsWith('height')?'height': id.startsWith('weight')?'weight': id.startsWith('head')?'head':'weight')};
+        });
+        CHART_CURVES_CACHE[chartKey] = fitted;
+        return fitted;
+    } catch (e) {
+        console.error('Curve load error for', chartKey, e);
+        return null;
+    }
+}
+
+function calculatePercentileFromCurves(curvesObj, x, y, measurementType) {
+    if (!curvesObj) return null;
+    const curves = Object.entries(curvesObj).filter(([id,c])=> c.type===measurementType);
+    if (!curves.length) return null;
+    const matches=[];
+    for (const [cid, c] of curves) {
+        const cy = interpolateYAtXLocal(c.points, x);
+        if (cy!==null) {
+            const dist = Math.abs(y-cy);
+            const pctNum = parseFloat(c.percentile.substring(1));
+            matches.push({curveId:cid, percentile:c.percentile, percentileNum:pctNum, curveY:cy, distance:dist});
+        }
+    }
+    if (!matches.length) return null;
+    matches.sort((a,b)=>a.distance-b.distance);
+    const closest = matches[0];
+    const yVals = matches.map(m=>m.curveY);
+    const minY = Math.min(...yVals); const maxY=Math.max(...yVals);
+    const ABS=7, EXT=8, EXACT_THRESHOLD=15, REL_FRAC=0.22;
+    // orientation logic simplified (weight assumes orientation detection if needed)
+    let orientationSign=-1;
+    if (measurementType==='weight') {
+        const p97=matches.find(m=>m.percentileNum===97); const p3=matches.find(m=>m.percentileNum===3);
+        if (p97 && p3) orientationSign = (p97.curveY > p3.curveY)? +1 : -1;
+    }
+    if (measurementType==='height' || measurementType==='head' || (measurementType==='weight'&&orientationSign===-1)) {
+        if (y < (minY-EXT)) return {percentile:97, displayPercentile:'>P97', type:'extreme', confidence:'medium'};
+        if (y > (maxY+EXT)) return {percentile:3, displayPercentile:'<P3', type:'extreme', confidence:'medium'};
+    } else if (measurementType==='weight') {
+        if (y > (maxY+EXT)) return {percentile:97, displayPercentile:'>P97', type:'extreme', confidence:'medium'};
+        if (y < (minY-EXT)) return {percentile:3, displayPercentile:'<P3', type:'extreme', confidence:'medium'};
+    }
+    // bracketing
+    let upper=null, lower=null;
+    for (const m of matches) {
+        if (measurementType==='height' || measurementType==='head' || (measurementType==='weight'&&orientationSign===-1)) {
+            if (m.curveY <= y && (!upper || m.curveY > upper.curveY)) upper=m;
+            if (m.curveY >= y && (!lower || m.curveY < lower.curveY)) lower=m;
+        } else {
+            if (m.curveY >= y && (!upper || m.curveY < upper.curveY)) upper=m;
+            if (m.curveY <= y && (!lower || m.curveY > lower.curveY)) lower=m;
+        }
+    }
+    let yRange=null; if (upper && lower && upper.curveId!==lower.curveId) yRange=Math.abs(lower.curveY-upper.curveY);
+    if (closest.distance <= ABS) return {percentile:closest.percentileNum, type:'exact', confidence:'high'};
+    if (yRange && closest.distance <= EXACT_THRESHOLD) {
+        const frac = closest.distance / yRange; if (frac <= REL_FRAC) return {percentile:closest.percentileNum, type:'exact', confidence:'high'};
+    }
+    if (upper && lower && upper.curveId!==lower.curveId && yRange>0) {
+        const ratio = Math.abs(y-upper.curveY)/yRange;
+        let interpolated;
+        if (measurementType==='height' || measurementType==='head') {
+            interpolated = upper.percentileNum - ratio*(upper.percentileNum-lower.percentileNum);
+        } else {
+            interpolated = orientationSign===-1 ? upper.percentileNum - ratio*(upper.percentileNum-lower.percentileNum)
+                                               : upper.percentileNum + ratio*(lower.percentileNum-upper.percentileNum);
+        }
+        const pA=upper.percentileNum; const pB=lower.percentileNum; const low=Math.min(pA,pB); const high=Math.max(pA,pB);
+        const distU=Math.abs(y-upper.curveY), distL=Math.abs(y-lower.curveY);
+        const rangeType = (distU>20 && distL>20)?'range':'interpolated_with_range';
+        return {percentile:interpolated, range:`P${low}-${high}`, type:rangeType, confidence:'high'};
+    }
+    return {percentile:closest.percentileNum, type:'extrapolated', confidence: closest.distance<50?'medium':'low'};
+}
+
+function interpolateYAtXLocal(points, targetX) {
+    if (!points || points.length<2) return null;
+    const sorted = points.slice().sort((a,b)=>a.x-b.x);
+    for (let i=0;i<sorted.length-1;i++) {
+        const p1=sorted[i], p2=sorted[i+1];
+        if (p1.x<=targetX && targetX<=p2.x) {
+            if (p2.x-p1.x===0) return p1.y;
+            const ratio=(targetX-p1.x)/(p2.x-p1.x); return p1.y + ratio*(p2.y-p1.y);
+        }
+    }
+    if (targetX < sorted[0].x) return sorted[0].y;
+    if (targetX > sorted[sorted.length-1].x) return sorted[sorted.length-1].y;
+    return null;
+}
 
 class GrowthChartPlotter {
     constructor() {
@@ -375,20 +513,84 @@ class GrowthChartPlotter {
     setupEventListeners() {
         document.getElementById('growthForm').addEventListener('submit', (e) => {
             e.preventDefault();
+            // Always refresh multi view (default) and single view if active
+            this.refreshViews();
+        });
+        
+        // New decoupled selectors
+        const sexSelect = document.getElementById('sexSelect');
+        const chartTypeSelect = document.getElementById('chartTypeSelect');
+        const recomputeKey = () => {
+            const sex = sexSelect.value; // Boy/Girl
+            const chartType = chartTypeSelect.value; // age_2_19 | age_0_2 | wfh | hc
+            let key;
+            switch(chartType){
+                case 'age_2_19': key = sex; break; // Boy or Girl
+                case 'age_0_2': key = sex + '_0_2'; break;
+                case 'wfh': key = sex + '_WFH'; break;
+                case 'hc': key = sex + '_HC'; break;
+            }
+            const hidden = document.getElementById('sex');
+            if (hidden.value !== key) {
+                hidden.value = key;
+                this.currentSex = key; // reuse existing variable name
+                this.clearPoints();
+                this.loadChartForCurrentSex();
+                console.log('Switched to chart config', key);
+            }
+        };
+        sexSelect.addEventListener('change', recomputeKey);
+        chartTypeSelect.addEventListener('change', recomputeKey);
+
+        // Age-based smart filtering of chart types
+        const ageInputs = ['ageYears','ageMonths','ageDays'].map(id=>document.getElementById(id));
+        const smartFilter = () => {
+            const age = this.calculateAge();
+            const ctSel = document.getElementById('chartTypeSelect');
+            // Enable/disable options based on age
+            [...ctSel.options].forEach(opt=>{
+                if (opt.value === 'age_0_2') {
+                    opt.disabled = age > 2.05; // a little buffer
+                } else if (opt.value === 'hc') {
+                    opt.disabled = age > 5.05; // HC only 0-5
+                } else if (opt.value === 'wfh' || opt.value === 'age_2_19') {
+                    // require age >=2 for WFH and 2-19 charts
+                    opt.disabled = age < 2 - 0.02; // slight buffer
+                }
+            });
+            // If current selection got disabled, switch to first enabled
+            if (ctSel.selectedOptions[0].disabled) {
+                const firstEnabled = [...ctSel.options].find(o=>!o.disabled);
+                if (firstEnabled) { ctSel.value = firstEnabled.value; chartTypeSelect.dispatchEvent(new Event('change')); }
+            }
+        };
+        ageInputs.forEach(inp=> inp.addEventListener('input', ()=>{ smartFilter(); this.refreshViews(); }));
+        smartFilter();
+
+        // Live update on measurement changes (weight, height, head circumference)
+        const debounce = (fn, delay=220) => { let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), delay); }; };
+        const measurementInputs = ['weight','height','headCircumference'].map(id=>document.getElementById(id));
+        const debouncedRefresh = debounce(()=> this.refreshViews());
+        measurementInputs.forEach(inp=> inp && inp.addEventListener('input', debouncedRefresh));
+
+        // Tabs logic
+        const multiTab = document.getElementById('multiTab');
+        const singleTab = document.getElementById('singleTab');
+        multiTab.addEventListener('click', ()=>{
+            multiTab.style.background='#6f42c1'; singleTab.style.background='#777';
+            document.getElementById('multiChartsContainer').style.display='grid';
+            document.getElementById('chartContainer').style.display='none';
+            document.getElementById('chartViewTitle').textContent='Multi Charts';
+            this.handleMultiPlot();
+        });
+        singleTab.addEventListener('click', ()=>{
+            singleTab.style.background='#6f42c1'; multiTab.style.background='#777';
+            document.getElementById('multiChartsContainer').style.display='none';
+            document.getElementById('chartContainer').style.display='block';
+            document.getElementById('chartViewTitle').textContent='Single Chart';
             this.plotData();
         });
-        
-        // Handle sex selection changes
-        document.getElementById('sex').addEventListener('change', (e) => {
-            const newSex = e.target.value;
-            if (newSex !== this.currentSex) {
-                this.currentSex = newSex;
-                this.clearPoints(); // Clear existing points when switching charts
-                this.loadChartForCurrentSex(); // Load new chart
-                console.log(`Switched to ${this.currentSex} chart`);
-            }
-        });
-        
+        // Toggle curves button (single chart view relevance)
         document.getElementById('toggleCurves').addEventListener('click', () => {
             this.showCurves = !this.showCurves;
             this.drawChart();
@@ -402,11 +604,21 @@ class GrowthChartPlotter {
                 button.style.backgroundColor = '#28a745'; // Green for show
             }
         });
+
     }
-    
+
+    refreshViews() {
+        const multiActive = document.getElementById('multiChartsContainer').style.display !== 'none';
+        if (multiActive) this.handleMultiPlot(); else this.plotData();
+    }
     preloadExampleData() {
-        // Pre-fill with the example data - use Girl to showcase new feature
-        document.getElementById('sex').value = 'Girl';
+        // Pre-fill with the example data - use Girl Age 2-19 to showcase new feature
+        if (document.getElementById('sexSelect')) document.getElementById('sexSelect').value = 'Girl';
+        if (document.getElementById('chartTypeSelect')) document.getElementById('chartTypeSelect').value = 'age_2_19';
+        // Update hidden combined key
+        const hidden = document.getElementById('sex');
+        hidden.value = 'Girl';
+        this.currentSex = 'Girl';
         document.getElementById('ageYears').value = '15';
         document.getElementById('ageMonths').value = '0';
         document.getElementById('ageDays').value = '0';
@@ -479,27 +691,22 @@ class GrowthChartPlotter {
         const height = parseFloat(document.getElementById('height').value);
         const headCircumference = parseFloat(document.getElementById('headCircumference').value);
         const config = this.getCurrentConfig();
-
-        // Validation differs per chart type
+        // Optional input mode: only proceed if minimum needed fields for this chart are present; otherwise skip silently
+        let missingCore = false;
         if (config.chartType === 'HC') {
-            if (!sex || isNaN(headCircumference)) {
-                alert('Please enter head circumference.');
-                return;
-            }
+            if (isNaN(headCircumference)) missingCore = true;
         } else if (config.chartType === 'WFH') {
-            if (!sex || isNaN(weight) || isNaN(height)) {
-                alert('Please enter weight and height.');
-                return;
-            }
-        } else { // AGE chart
-            if (!sex || isNaN(weight) || isNaN(height)) {
-                alert('Please enter weight and height.');
-                return;
-            }
+            if (isNaN(weight) || isNaN(height)) missingCore = true;
+        } else { // AGE
+            if (isNaN(weight) || isNaN(height)) missingCore = true;
+        }
+        if (missingCore) {
+            console.log('Skipping plot: required fields for selected chart type not provided (optional mode).');
+            return;
         }
 
         if (age < config.minAge || age > config.maxAge) {
-            alert(`Age must be between ${config.minAge}-${config.maxAge} years for this chart.`);
+            console.log(`Age ${age.toFixed(2)} outside allowable range ${config.minAge}-${config.maxAge} for this chart; skipping.`);
             return;
         }
 
@@ -742,203 +949,68 @@ class GrowthChartPlotter {
     }
     
     updatePercentilePanel(weightPercentile, heightPercentile, calibratedWeightPercentile, calibratedHeightPercentile) {
-        const percentilePanel = document.getElementById('percentilePanel');
-        const heightDisplay = document.getElementById('heightPercentileDisplay');
-        const weightDisplay = document.getElementById('weightPercentileDisplay');
-        const detailsDisplay = document.getElementById('percentileDetails');
-        const config = this.getCurrentConfig();
-
-        // Adjust header if needed
-        const headerEl = document.getElementById('percentileHeader');
-        if (headerEl) {
-            if (config.chartType === 'WFH') {
-                headerEl.textContent = '📊 Weight-for-Height Percentile';
-            } else if (config.chartType === 'HC') {
-                headerEl.textContent = '📊 Head Circumference Percentile';
-            } else {
-                headerEl.textContent = '📊 Percentile Analysis';
-            }
-        }
-        
-        // Show the panel
-        percentilePanel.style.display = 'block';
-        
-        // Function to extract percentile number or range from string
-        const extractPercentileInfo = (percentileStr) => {
-            if (!percentileStr) return null;
-            
-            // Check for range format like "P50-75"
-            const rangeMatch = percentileStr.match(/(P\d+)-(P\d+)/);
-            if (rangeMatch) {
-                return {
-                    type: 'range',
-                    display: `${rangeMatch[1]}-${rangeMatch[2]}`,
-                    lower: parseFloat(rangeMatch[1].substring(1)),
-                    upper: parseFloat(rangeMatch[2].substring(1))
-                };
-            }
-            
-            // Check for specific percentile like "P55.2"
-            const percentileMatch = percentileStr.match(/P(\d+\.?\d*)/);
-            if (percentileMatch) {
-                return {
-                    type: 'specific',
-                    display: `P${parseFloat(percentileMatch[1]).toFixed(1)}`,
-                    value: parseFloat(percentileMatch[1])
-                };
-            }
-            
-            return null;
+        const panel = document.getElementById('percentilePanel');
+        if (!panel) return;
+        const boxes = {
+            height: document.getElementById('heightPercentileDisplay'),
+            weight: document.getElementById('weightPercentileDisplay'),
+            wfh: document.getElementById('wfhPercentileDisplay'),
+            head: document.getElementById('headPercentileDisplay')
         };
-        
-        // For Weight-for-Height chart, we only show Weight (W/H) percentile using weight curves; hide height block.
-        if (config.chartType === 'WFH' || config.chartType === 'HC') {
-            const heightWrapper = heightDisplay?.parentElement; // assuming structure label + span inside parent
-            if (heightWrapper) {
-                heightWrapper.style.display = 'none';
-            }
-        } else {
-            const heightWrapper = heightDisplay?.parentElement;
-            if (heightWrapper) {
-                heightWrapper.style.display = '';
-            }
+        const config = this.getCurrentConfig();
+        panel.style.display = 'block';
+        const header = document.getElementById('percentileHeader');
+        if (header){
+            header.textContent = (config.chartType==='WFH')?'📊 Weight-for-Height Percentile':(config.chartType==='HC'?'📊 Head Circumference Percentile':'📊 Percentile Analysis');
         }
+        const parseStr = (s)=>{ if(!s) return null; const m=s.match(/P(\d+\.?\d*)/); if(m) return {type:'specific', value:parseFloat(m[1]), display:`P${parseFloat(m[1]).toFixed(1)}`}; return null; };
+        const hInfo = calibratedHeightPercentile? calibratedHeightPercentile : parseStr(heightPercentile);
+        const wInfo = calibratedWeightPercentile? calibratedWeightPercentile : parseStr(weightPercentile);
+        // Reset all
+        Object.values(boxes).forEach(el=>{ if(el){ el.textContent='-'; el.style.background='rgba(255,255,255,0.2)'; }});
 
-        // Update height percentile display (skip if WFH)
-        let heightInfo = null;
-        let heightSource = '';
-        if (config.chartType !== 'WFH' && calibratedHeightPercentile) {
-            if (calibratedHeightPercentile.type === 'range') {
-                heightInfo = {
-                    type: 'range_with_value',
-                    display: `${calibratedHeightPercentile.range} (P${calibratedHeightPercentile.percentile.toFixed(1)})`,
-                    value: calibratedHeightPercentile.percentile,
-                    lower: parseFloat(calibratedHeightPercentile.range.split('-')[0].substring(1)),
-                    upper: parseFloat(calibratedHeightPercentile.range.split('-')[1])
-                };
-            } else if (calibratedHeightPercentile.type === 'interpolated_with_range') {
-                heightInfo = {
-                    type: 'range_with_value',
-                    display: `${calibratedHeightPercentile.range} (P${calibratedHeightPercentile.percentile.toFixed(1)})`,
-                    value: calibratedHeightPercentile.percentile,
-                    lower: parseFloat(calibratedHeightPercentile.range.split('-')[0].substring(1)),
-                    upper: parseFloat(calibratedHeightPercentile.range.split('-')[1])
-                };
-            } else if (calibratedHeightPercentile.type === 'extreme' && calibratedHeightPercentile.displayPercentile) {
-                heightInfo = {
-                    type: 'extreme',
-                    display: calibratedHeightPercentile.displayPercentile,
-                    value: calibratedHeightPercentile.percentile
-                };
-            } else {
-                heightInfo = {
-                    type: 'specific',
-                    display: `P${calibratedHeightPercentile.percentile.toFixed(1)}`,
-                    value: calibratedHeightPercentile.percentile
-                };
+        const colorize = (el, val, type, displayExt) => {
+            if(!el) return; if (type==='extreme') { el.style.background='rgba(255,0,0,0.3)'; el.textContent=displayExt; return; }
+            if (typeof val==='number') el.style.background=this.getPercentileColor(val,0.3);
+        };
+        // AGE
+        if (config.chartType==='AGE') {
+            if (wInfo) {
+                if (wInfo.type==='extreme' && wInfo.displayPercentile) { boxes.weight.textContent=wInfo.displayPercentile; colorize(boxes.weight,null,'extreme',wInfo.displayPercentile); }
+                else { boxes.weight.textContent=(wInfo.range?`${wInfo.range} (P${wInfo.percentile.toFixed(1)})`:`P${wInfo.percentile.toFixed(1)}`); colorize(boxes.weight,wInfo.percentile); }
             }
-            heightSource = 'Magnetic Curves';
-        } else {
-            heightInfo = extractPercentileInfo(heightPercentile);
-            heightSource = 'Computer Vision';
-        }
-        
-        if (config.chartType === 'WFH') {
-            // already hidden
-        } else if (config.chartType === 'HC') {
-            // height hidden; nothing to assign
-        } else if (heightInfo) {
-            heightDisplay.textContent = heightInfo.display;
-            if (heightInfo.type === 'specific') {
-                heightDisplay.style.background = this.getPercentileColor(heightInfo.value, 0.3);
-            } else if (heightInfo.type === 'range_with_value') {
-                // For range with specific value, use the specific value for coloring
-                heightDisplay.style.background = this.getPercentileColor(heightInfo.value, 0.3);
-            } else {
-                // For ranges, use color based on the middle value
-                const midValue = (heightInfo.lower + heightInfo.upper) / 2;
-                heightDisplay.style.background = this.getPercentileColor(midValue, 0.3);
+            if (hInfo) {
+                if (hInfo.type==='extreme' && hInfo.displayPercentile) { boxes.height.textContent=hInfo.displayPercentile; colorize(boxes.height,null,'extreme',hInfo.displayPercentile); }
+                else { boxes.height.textContent=(hInfo.range?`${hInfo.range} (P${hInfo.percentile.toFixed(1)})`:`P${hInfo.percentile.toFixed(1)}`); colorize(boxes.height,hInfo.percentile); }
             }
-        } else {
-            heightDisplay.textContent = '-';
-            heightDisplay.style.background = 'rgba(255,255,255,0.2)';
-        }
-        
-        // Update weight percentile display
-        let weightInfo = null;
-        let weightSource = '';
-        if (calibratedWeightPercentile) {
-            if (calibratedWeightPercentile.type === 'range') {
-                weightInfo = {
-                    type: 'range_with_value',
-                    display: `${calibratedWeightPercentile.range} (P${calibratedWeightPercentile.percentile.toFixed(1)})`,
-                    value: calibratedWeightPercentile.percentile,
-                    lower: parseFloat(calibratedWeightPercentile.range.split('-')[0].substring(1)),
-                    upper: parseFloat(calibratedWeightPercentile.range.split('-')[1])
-                };
-            } else if (calibratedWeightPercentile.type === 'interpolated_with_range') {
-                weightInfo = {
-                    type: 'range_with_value',
-                    display: `${calibratedWeightPercentile.range} (P${calibratedWeightPercentile.percentile.toFixed(1)})`,
-                    value: calibratedWeightPercentile.percentile,
-                    lower: parseFloat(calibratedWeightPercentile.range.split('-')[0].substring(1)),
-                    upper: parseFloat(calibratedWeightPercentile.range.split('-')[1])
-                };
-            } else if (calibratedWeightPercentile.type === 'extreme' && calibratedWeightPercentile.displayPercentile) {
-                weightInfo = {
-                    type: 'extreme',
-                    display: calibratedWeightPercentile.displayPercentile,
-                    value: calibratedWeightPercentile.percentile
-                };
-            } else {
-                weightInfo = {
-                    type: 'specific',
-                    display: `P${calibratedWeightPercentile.percentile.toFixed(1)}`,
-                    value: calibratedWeightPercentile.percentile
-                };
-            }
-            weightSource = 'Magnetic Curves';
-        } else {
-            weightInfo = extractPercentileInfo(weightPercentile);
-            weightSource = 'Computer Vision';
-        }
-        
-        if (weightInfo) {
-            // Prefix label for WFH or HC scenario
-            if (config.chartType === 'WFH') weightDisplay.textContent = `W/H: ${weightInfo.display}`;
-            else if (config.chartType === 'HC') weightDisplay.textContent = `Head: ${weightInfo.display}`;
-            else weightDisplay.textContent = weightInfo.display;
-            if (weightInfo.type === 'specific') {
-                // Adjust display for extreme numeric values outside 3-97
-                if (typeof weightInfo.value === 'number') {
-                    if (weightInfo.value < 3) {
-                        weightDisplay.textContent = (config.chartType === 'WFH') ? `W/H: <P3` : (config.chartType === 'HC' ? `Head: <P3` : '<P3');
-                    } else if (weightInfo.value > 97) {
-                        weightDisplay.textContent = (config.chartType === 'WFH') ? `W/H: >P97` : (config.chartType === 'HC' ? `Head: >P97` : '>P97');
+            // Optional head
+            const headVal = parseFloat(document.getElementById('headCircumference').value);
+            if (!isNaN(headVal)) {
+                const sexKey = this.currentSex.startsWith('Girl')? 'Girl_HC':'Boy_HC';
+                const hcCfg = CHART_CONFIGS[sexKey];
+                if (hcCfg) {
+                    const headX = (()=>{ const slope=(hcCfg.headXRef2-hcCfg.headXRef1)/(hcCfg.ageRef2-hcCfg.ageRef1); return hcCfg.headXRef1 + slope*(this.calculateAge()-hcCfg.ageRef1); })();
+                    const headY = (()=>{ const slope=(hcCfg.headYRef2-hcCfg.headYRef1)/(hcCfg.headRef2-hcCfg.headRef1); return hcCfg.headYRef1 + slope*(headVal-hcCfg.headRef1); })();
+                    const headPct = this.calibrationManager?.calculatePercentileForPoint(headX, headY, 'head');
+                    if (headPct && boxes.head) {
+                        if (headPct.type==='extreme' && headPct.displayPercentile) { boxes.head.textContent=headPct.displayPercentile; colorize(boxes.head,null,'extreme',headPct.displayPercentile); }
+                        else { boxes.head.textContent=`P${headPct.percentile.toFixed(1)}` + (headPct.range?` (${headPct.range})`: ''); colorize(boxes.head,headPct.percentile); }
                     }
                 }
-                weightDisplay.style.background = this.getPercentileColor(weightInfo.value, 0.3);
-            } else if (weightInfo.type === 'range_with_value') {
-                // For range with specific value, use the specific value for coloring
-                weightDisplay.style.background = this.getPercentileColor(weightInfo.value, 0.3);
-            } else {
-                // For ranges, use color based on the middle value
-                const midValue = (weightInfo.lower + weightInfo.upper) / 2;
-                weightDisplay.style.background = this.getPercentileColor(midValue, 0.3);
             }
-        } else {
-            weightDisplay.textContent = '-';
-            weightDisplay.style.background = 'rgba(255,255,255,0.2)';
+        } else if (config.chartType==='WFH') {
+            if (wInfo) {
+                if (wInfo.type==='extreme' && wInfo.displayPercentile) { boxes.wfh.textContent=wInfo.displayPercentile; colorize(boxes.wfh,null,'extreme',wInfo.displayPercentile); }
+                else { boxes.wfh.textContent=(wInfo.range?`${wInfo.range} (P${wInfo.percentile.toFixed(1)})`:`P${wInfo.percentile.toFixed(1)}`); colorize(boxes.wfh,wInfo.percentile); }
+            }
+        } else if (config.chartType==='HC') {
+            if (wInfo) { // wInfo actually head here
+                if (wInfo.type==='extreme' && wInfo.displayPercentile) { boxes.head.textContent=wInfo.displayPercentile; colorize(boxes.head,null,'extreme',wInfo.displayPercentile); }
+                else { boxes.head.textContent=(wInfo.range?`${wInfo.range} (P${wInfo.percentile.toFixed(1)})`:`P${wInfo.percentile.toFixed(1)}`); colorize(boxes.head,wInfo.percentile); }
+            }
         }
-        
-        // Update details
-        if (calibratedHeightPercentile || calibratedWeightPercentile) {
-            detailsDisplay.textContent = `Calculated using ${heightSource || weightSource} - High accuracy`;
-        } else if (heightInfo !== null || weightInfo !== null) {
-            detailsDisplay.textContent = `Calculated using Computer Vision - Medium accuracy`;
-        } else {
-            detailsDisplay.textContent = `Magnetic curves automatically loaded for accurate percentile calculation`;
-        }
+        const details = document.getElementById('percentileDetails');
+        if (details) details.textContent='Magnetic curves based percentile computation';
     }
     
     getPercentileColor(percentile, alpha = 1.0) {
@@ -991,4 +1063,157 @@ document.addEventListener('DOMContentLoaded', () => {
     clearButton.onclick = () => window.chartPlotter.clearPoints();
     
     document.querySelector('.form-section').appendChild(clearButton);
-});
+
+    // Multi-plot button logic
+    const multiBtn = document.getElementById('multiPlotBtn');
+    if (multiBtn) {
+        multiBtn.addEventListener('click', () => {
+            if (window.chartPlotter && typeof window.chartPlotter.handleMultiPlot === 'function') {
+                window.chartPlotter.handleMultiPlot();
+            }
+        });
+    }
+}); // End DOMContentLoaded
+
+GrowthChartPlotter.prototype.handleMultiPlot = function() {
+    const age = this.calculateAge();
+    const weight = parseFloat(document.getElementById('weight').value);
+    const height = parseFloat(document.getElementById('height').value);
+    const headCircumference = parseFloat(document.getElementById('headCircumference').value);
+    const multiContainer = document.getElementById('multiChartsContainer');
+    if (!multiContainer) return; multiContainer.innerHTML='';
+    const selectedKey = document.getElementById('sex').value || this.currentSex; const baseSex = selectedKey.startsWith('Girl')?'Girl':'Boy';
+    const applicable = Object.entries(CHART_CONFIGS).filter(([key,cfg])=>{
+        if(!key.startsWith(baseSex)) return false;
+        // Age gating per chart type
+        if (cfg.chartType==='AGE') {
+            const isZeroToTwo = key.endsWith('_0_2');
+            if (isZeroToTwo) { if (age > 2.05) return false; }
+            else { if (age < 1.98) return false; }
+            return !isNaN(weight)&&!isNaN(height);
+        } else if (cfg.chartType==='WFH') {
+            if (age < 1.98) return false; return !isNaN(weight)&&!isNaN(height);
+        } else if (cfg.chartType==='HC') {
+            if (age > 5.05) return false; return !isNaN(headCircumference);
+        }
+        return false;
+
+    });
+    multiContainer.style.display='grid';
+    const aggregate=[]; const promises=[];
+    // Show panel early placeholder
+    const panel=document.getElementById('percentilePanel');
+    if(panel){ panel.style.display='block'; const h=document.getElementById('percentileHeader'); if(h) h.textContent='📊 Combined Percentile Analysis (loading...)'; }
+    if (typeof this.updateMultiPercentilePanel==='function') this.updateMultiPercentilePanel([]);
+
+    applicable.forEach(([key,cfg])=>{
+            const card=document.createElement('div');
+            card.style.background='#fff'; card.style.border='1px solid #ddd'; card.style.borderRadius='8px'; card.style.padding='10px'; card.style.display='flex'; card.style.flexDirection='column'; card.style.gap='6px';
+            const title=document.createElement('div'); title.innerHTML=`<strong>${key}</strong> <small style="color:#666;">(${cfg.chartType})</small>`; card.appendChild(title);
+            const canvas=document.createElement('canvas'); canvas.width=600; canvas.height=840; canvas.style.width='100%'; canvas.style.height='auto'; canvas.style.border='1px solid #ccc'; card.appendChild(canvas); const ctx=canvas.getContext('2d');
+            const img=new Image();
+            const p=new Promise(resolve=>{
+                img.onload=async ()=>{
+                    ctx.drawImage(img,0,0,canvas.width,canvas.height);
+                    const mapLinear=(val,v1,p1,v2,p2)=>{ const slope=(p2-p1)/(v2-v1); return p1 + slope*(val - v1); };
+                    let x, weightY=null, heightY=null;
+                    if (cfg.chartType==='WFH') { if(!isNaN(height)&&!isNaN(weight)){ x=mapLinear(height,cfg.heightRef1,cfg.heightXRef1,cfg.heightRef2,cfg.heightXRef2); weightY=mapLinear(weight,cfg.weightRef1,cfg.weightYRef1,cfg.weightRef2,cfg.weightYRef2);} }
+                    else if (cfg.chartType==='HC') { if(!isNaN(headCircumference)){ x=mapLinear(age,cfg.ageRef1,cfg.headXRef1,cfg.ageRef2,cfg.headXRef2); weightY=mapLinear(headCircumference,cfg.headRef1,cfg.headYRef1,cfg.headRef2,cfg.headYRef2);} }
+                    else { if(!isNaN(weight)&&!isNaN(height)){ x=mapLinear(age,cfg.ageRef1,cfg.weightXRef1,cfg.ageRef2,cfg.weightXRef2); weightY=mapLinear(weight,cfg.weightRef1,cfg.weightYRef1,cfg.weightRef2,cfg.weightYRef2); heightY=mapLinear(height,cfg.heightRef1,cfg.heightYRef1,cfg.heightRef2,cfg.heightYRef2);} }
+                    const curves=await loadCurvesForChartKey(key);
+                    if(curves){ ctx.lineWidth=1.5; ctx.globalAlpha=0.75; const percentileColors={'P3':'#800080','P10':'#ff00ff','P25':'#00ffff','P50':'#00ff00','P75':'#ffff00','P90':'#ffa500','P97':'#ff0000'}; for(const c of Object.values(curves)){ if(c.type==='head'&&cfg.chartType!=='HC') continue; if(c.type==='height'&&cfg.chartType==='WFH') continue; ctx.beginPath(); for(let i=0;i<c.points.length;i++){ const px=c.points[i].x*(canvas.width/img.naturalWidth); const py=c.points[i].y*(canvas.height/img.naturalHeight); if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);} ctx.strokeStyle=percentileColors[c.percentile]||'#888'; ctx.stroke(); } ctx.globalAlpha=1; }
+                    if(typeof x!=='undefined' && weightY!==null){ const scaledX = x * (canvas.width / this.originalWidth); const scaledWeightY=weightY*(canvas.height/ this.originalHeight); ctx.fillStyle=(cfg.chartType==='HC')?'#800080':'#ff0000'; ctx.beginPath(); ctx.arc(scaledX,scaledWeightY,4,0,2*Math.PI); ctx.fill(); if(cfg.chartType==='AGE' && heightY!==null){ const scaledHeightY=heightY*(canvas.height/ this.originalHeight); ctx.fillStyle='#0066cc'; ctx.beginPath(); ctx.arc(scaledX,scaledHeightY,4,0,2*Math.PI); ctx.fill(); ctx.strokeStyle='#666'; ctx.setLineDash([2,2]); ctx.beginPath(); ctx.moveTo(scaledX,scaledWeightY); ctx.lineTo(scaledX,scaledHeightY); ctx.stroke(); ctx.setLineDash([]);} }
+                    let weightPct=null, heightPct=null; if(curves && typeof x!=='undefined' && weightY!==null){ if(cfg.chartType==='HC'){ weightPct=calculatePercentileFromCurves(curves,x,weightY,'head'); } else { weightPct=calculatePercentileFromCurves(curves,x,weightY,'weight'); if(cfg.chartType==='AGE' && heightY!==null){ heightPct=calculatePercentileFromCurves(curves,x,heightY,'height'); } } }
+                    const metricsRow=document.createElement('div'); metricsRow.style.display='flex'; metricsRow.style.flexWrap='wrap'; metricsRow.style.gap='6px';
+                    const buildBadge=(label,result)=>{ if(!result) return null; let text; if(result.type==='extreme'&&result.displayPercentile) text=`${label}: ${result.displayPercentile}`; else { text=`${label}: P${result.percentile.toFixed(1)}`; if(result.type==='range'||result.type==='interpolated_with_range') text+=` (${result.range})`; } const badge=document.createElement('span'); badge.textContent=text; badge.style.fontSize='11px'; badge.style.padding='3px 6px'; badge.style.borderRadius='12px'; badge.style.background='#eef2f7'; badge.style.border='1px solid #d0d7de'; badge.style.lineHeight='1.2'; const accent=label.startsWith('W/H')?'#6f42c1':(label.startsWith('Head')?'#800080':(label.startsWith('Height')?'#0066cc':'#ff0000')); badge.style.boxShadow=`inset 0 0 0 2px ${accent}20`; if(result.percentile!==undefined){ const p=result.percentile; if(p<3||p>97) badge.style.background='#ffe5e5'; else if(p<10||p>90) badge.style.background='#ffeccc'; else if(p>=25&&p<=75) badge.style.background='#e2f7e2'; } return badge; };
+                    if(cfg.chartType==='HC') metricsRow.appendChild(buildBadge('Head',weightPct)); else if(cfg.chartType==='WFH') metricsRow.appendChild(buildBadge('W/H',weightPct)); else { metricsRow.appendChild(buildBadge('Weight',weightPct)); metricsRow.appendChild(buildBadge('Height',heightPct)); }
+                    card.appendChild(metricsRow);
+                    if(weightPct) aggregate.push({chart:key, measure: cfg.chartType==='HC'?'Head':(cfg.chartType==='WFH'?'W/H':'Weight'), result:weightPct});
+                    if(heightPct) aggregate.push({chart:key, measure:'Height', result:heightPct});
+                    resolve();
+                };
+            });
+            img.src=cfg.imageSrc; multiContainer.appendChild(card); promises.push(p);
+        });
+
+        console.log('Applicable charts for multi-plot:', applicable.map(a=>a[0]));
+        Promise.all(promises).then(()=>{
+            if(aggregate.length){
+                const resultsDiv=document.getElementById('results'); const resultsContent=document.getElementById('resultsContent'); resultsDiv.style.display='block';
+                const summarize=r=>{ if(r.result.type==='extreme'&&r.result.displayPercentile) return r.result.displayPercentile; let base=`P${r.result.percentile.toFixed(1)}`; if(r.result.range) base+=` (${r.result.range})`; return base; };
+                const rows=aggregate.map(r=>`<tr><td>${r.chart}</td><td>${r.measure}</td><td>${summarize(r)}</td><td>${r.result.type}</td><td>${r.result.confidence}</td></tr>`).join('');
+                const table=`<div style=\"margin-top:12px;\"><strong>Aggregate Percentiles</strong><table style=\"width:100%;border-collapse:collapse;font-size:12px;margin-top:4px;\">`+
+                `<thead><tr style=\\"background:#eee\\"><th style=\\"text-align:left;padding:4px;\\">Chart</th><th style=\\"text-align:left;padding:4px;\\">Measure</th><th style=\\"text-align:left;padding:4px;\\">Percentile</th><th style=\\"text-align:left;padding:4px;\\">Type</th><th style=\\"text-align:left;padding:4px;\\">Confidence</th></tr></thead>`+
+                `<tbody>${rows}</tbody></table></div>`;
+                const existing=resultsContent.querySelectorAll('[data-aggregate-table=\"1\"]'); existing.forEach(el=>el.remove());
+                const wrapper=document.createElement('div'); wrapper.setAttribute('data-aggregate-table','1'); wrapper.innerHTML=table; resultsContent.appendChild(wrapper);
+            }
+            if (typeof this.updateMultiPercentilePanel==='function') this.updateMultiPercentilePanel(aggregate);
+        });
+    // End handleMultiPlot
+};
+
+// Update the main stacked percentile panel based on multi-plot aggregate results
+GrowthChartPlotter.prototype.updateMultiPercentilePanel = function(aggregate){
+    const panel = document.getElementById('percentilePanel');
+    if(!panel) return;
+    // Build first-seen measurement map
+    const measurementMap = {};
+    aggregate.forEach(entry => {
+        if (!measurementMap[entry.measure]) measurementMap[entry.measure] = entry.result;
+    });
+    panel.style.display='block';
+    const header = document.getElementById('percentileHeader');
+    if (header) header.textContent = '📊 Combined Percentile Analysis';
+    const boxes = {
+        weight: document.getElementById('weightPercentileDisplay'),
+        height: document.getElementById('heightPercentileDisplay'),
+        wfh: document.getElementById('wfhPercentileDisplay'),
+        head: document.getElementById('headPercentileDisplay')
+    };
+    const valueBoxes = {
+        weight: document.getElementById('weightValueDisplay'),
+        height: document.getElementById('heightValueDisplay'),
+        wfh: document.getElementById('wfhValueDisplay'),
+        head: document.getElementById('headValueDisplay')
+    };
+    // Reset
+    Object.values(boxes).forEach(el=>{ if(el){ el.textContent='-'; el.style.background='rgba(255,255,255,0.2)'; }});
+    // Extract raw input values for display
+    const rawWeight = parseFloat(document.getElementById('weight').value);
+    const rawHeight = parseFloat(document.getElementById('height').value);
+    const rawHead = parseFloat(document.getElementById('headCircumference').value);
+
+    const formatPct = (res) => {
+        if(!res) return '-';
+        if(res.type==='extreme' && res.displayPercentile) return `${res.displayPercentile}`;
+        if(res.percentile !== undefined) {
+            if (res.range) return `${res.range} (P${res.percentile.toFixed(1)})`;
+            return `P${res.percentile.toFixed(1)}`;
+        }
+        return '-';
+    };
+    const applyComposite = (pctEl, valueEl, label, value, unit, res) => {
+        if(!pctEl) return;
+        if(valueEl) valueEl.textContent = isNaN(value)? '-' : `${value}${unit}`;
+        if(!res){ pctEl.textContent='-'; pctEl.style.background='rgba(255,255,255,0.15)'; return; }
+        let pctStr = formatPct(res);
+        pctEl.textContent = pctStr;
+        if(res.type==='extreme' && res.displayPercentile) pctEl.style.background='rgba(255,0,0,0.3)';
+        else if(res.percentile !== undefined) pctEl.style.background=this.getPercentileColor(res.percentile,0.25);
+    };
+
+    // Order: weight, height, W/H, HC
+    applyComposite(boxes.weight, valueBoxes.weight, 'Weight', rawWeight, 'kg', measurementMap['Weight']);
+    applyComposite(boxes.height, valueBoxes.height, 'Height', rawHeight, 'cm', measurementMap['Height']);
+    // For W/H, show derived value if both weight & height exist (e.g., 55kg/160cm) else '-'
+    if (!isNaN(rawWeight) && !isNaN(rawHeight)) {
+        valueBoxes.wfh.textContent = `${rawWeight}kg/${rawHeight}cm`;
+    } else if (valueBoxes.wfh) {
+        valueBoxes.wfh.textContent='-';
+    }
+    applyComposite(boxes.wfh, valueBoxes.wfh, 'W/H', NaN, '', measurementMap['W/H']);
+    applyComposite(boxes.head, valueBoxes.head, 'HC', rawHead, 'cm', measurementMap['Head']);
+    const details = document.getElementById('percentileDetails');
+    if(details) details.textContent = 'Magnetic curves based percentile computation (multi-chart)';
+};

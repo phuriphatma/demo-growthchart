@@ -194,6 +194,14 @@
             color: #333;
             margin-top: 0;
         }
+        /* Unified percentile panel row grid so percentile column aligns vertically */
+        .pct-row { 
+            display: grid; 
+            grid-template-columns: 56px 78px auto; /* label | value | percentile */
+            align-items: center; 
+            gap: 6px; 
+        }
+        .pct-row .pct-pct { white-space: nowrap; }
     </style>
 </head>
 <body>
@@ -204,24 +212,28 @@
             <h2>Enter Data</h2>
             <form id="growthForm">
                 <div class="form-group">
-                    <label for="sex">Sex:</label>
-                    <select id="sex" required>
-                        <option value="">Select...</option>
-                        <option value="Boy" selected>Boy (2-19y)</option>
-                        <option value="Boy_WFH">Boy WFH (2-19y)</option>
-                        <option value="Boy_0_2">Boy (0-2y)</option>
-                        <option value="Boy_HC">Boy Head Circ (0-5y)</option>
-                        <option value="Girl">Girl (2-19y)</option>
-                        <option value="Girl_HC">Girl Head Circ (0-5y)</option>
-                        <option value="Girl_WFH">Girl WFH (2-19y)</option>
-                        <option value="Girl_0_2">Girl (0-2y)</option>
+                    <label for="sexSelect">Sex:</label>
+                    <select id="sexSelect">
+                        <option value="Boy" selected>Boy</option>
+                        <option value="Girl">Girl</option>
                     </select>
                 </div>
+                <div class="form-group">
+                    <label for="chartTypeSelect">Chart Type:</label>
+                    <select id="chartTypeSelect">
+                        <option value="age_2_19" selected>Age 2-19 Years</option>
+                        <option value="age_0_2">Age 0-2 Years</option>
+                        <option value="wfh">Weight-for-Height (2-19y)</option>
+                        <option value="hc">Head Circumference (0-5y)</option>
+                    </select>
+                </div>
+                <!-- Hidden combined key for legacy code paths -->
+                <input type="hidden" id="sex" value="Boy">
                 
                 <div class="form-group">
                     <label>Age:</label>
                     <div class="age-inputs">
-                        <input type="number" id="ageYears" placeholder="Years" min="0" max="19" required>
+                        <input type="number" id="ageYears" placeholder="Years" min="0" max="19">
                         <input type="number" id="ageMonths" placeholder="Months" min="0" max="11" value="0">
                         <input type="number" id="ageDays" placeholder="Days" min="0" max="30" value="0">
                     </div>
@@ -229,12 +241,12 @@
                 
                 <div class="form-group">
                     <label for="weight">Weight (kg):</label>
-                    <input type="number" id="weight" step="0.1" min="0" required>
+                    <input type="number" id="weight" step="0.1" min="0">
                 </div>
                 
                 <div class="form-group">
                     <label for="height">Height/Length (cm):</label>
-                    <input type="number" id="height" step="0.1" min="0" required>
+                    <input type="number" id="height" step="0.1" min="0">
                 </div>
                 
                 <div class="form-group">
@@ -242,25 +254,36 @@
                     <input type="number" id="headCircumference" step="0.1" min="0">
                 </div>
                 
-                <button type="submit">Plot on Chart</button>
+                <button type="submit">Plot</button>
+                <button type="button" id="multiPlotBtn" style="margin-top:8px;background:#6f42c1;">Multi Plot (All Charts)</button>
             </form>
             
             <!-- Percentile Display Panel -->
-            <div id="percentilePanel" style="display: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px; border-radius: 10px; margin-top: 15px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">
-                <h3 id="percentileHeader" style="margin-top: 0; text-align: center; font-size: 18px;">📊 Percentile Analysis</h3>
-                <div style="display: flex; gap: 15px; justify-content: space-around; flex-wrap: wrap;">
-                    <div style="text-align: center; flex: 1; min-width: 120px;">
-                        <div style="font-size: 12px; opacity: 0.9; margin-bottom: 5px;">HEIGHT</div>
-                        <div id="heightPercentileDisplay" style="font-size: 20px; font-weight: bold; background: rgba(255,255,255,0.2); padding: 8px; border-radius: 5px;">-</div>
+            <div id="percentilePanel" style="display:none; background: linear-gradient(135deg,#667eea 0%,#764ba2 100%); color:#fff; padding:15px; border-radius:10px; margin-top:15px; box-shadow:0 4px 8px rgba(0,0,0,0.2);">
+                <h3 id="percentileHeader" style="margin:0 0 12px 0; text-align:center; font-size:18px;">📊 Percentile Analysis</h3>
+                <div style="display:flex; flex-direction:column; gap:10px;">
+                    <div id="weightBox" class="pct-row">
+                        <div class="pct-label" style="font-size:12px; letter-spacing:0.5px;">WEIGHT</div>
+                        <div id="weightValueDisplay" class="pct-value" style="font-size:13px; text-align:center; background:rgba(255,255,255,0.08); padding:4px 6px; border-radius:4px;">-</div>
+                        <div id="weightPercentileDisplay" class="pct-pct" style="text-align:left; font-size:14px; font-weight:bold; background:rgba(255,255,255,0.15); padding:4px 8px; border-radius:6px;">-</div>
                     </div>
-                    <div style="text-align: center; flex: 1; min-width: 120px;">
-                        <div style="font-size: 12px; opacity: 0.9; margin-bottom: 5px;">WEIGHT</div>
-                        <div id="weightPercentileDisplay" style="font-size: 20px; font-weight: bold; background: rgba(255,255,255,0.2); padding: 8px; border-radius: 5px;">-</div>
+                    <div id="heightBox" class="pct-row">
+                        <div class="pct-label" style="font-size:12px; letter-spacing:0.5px;">HEIGHT</div>
+                        <div id="heightValueDisplay" class="pct-value" style="font-size:13px; text-align:center; background:rgba(255,255,255,0.08); padding:4px 6px; border-radius:4px;">-</div>
+                        <div id="heightPercentileDisplay" class="pct-pct" style="text-align:left; font-size:14px; font-weight:bold; background:rgba(255,255,255,0.15); padding:4px 8px; border-radius:6px;">-</div>
+                    </div>
+                    <div id="wfhBox" class="pct-row">
+                        <div class="pct-label" style="font-size:12px; letter-spacing:0.5px;">W/H</div>
+                        <div id="wfhValueDisplay" class="pct-value" style="font-size:13px; text-align:center; background:rgba(255,255,255,0.08); padding:4px 6px; border-radius:4px;">-</div>
+                        <div id="wfhPercentileDisplay" class="pct-pct" style="text-align:left; font-size:14px; font-weight:bold; background:rgba(255,255,255,0.15); padding:4px 8px; border-radius:6px;">-</div>
+                    </div>
+                    <div id="headBox" class="pct-row">
+                        <div class="pct-label" style="font-size:12px; letter-spacing:0.5px;">HC</div>
+                        <div id="headValueDisplay" class="pct-value" style="font-size:13px; text-align:center; background:rgba(255,255,255,0.08); padding:4px 6px; border-radius:4px;">-</div>
+                        <div id="headPercentileDisplay" class="pct-pct" style="text-align:left; font-size:14px; font-weight:bold; background:rgba(255,255,255,0.15); padding:4px 8px; border-radius:6px;">-</div>
                     </div>
                 </div>
-                <div id="percentileDetails" style="margin-top: 10px; font-size: 12px; text-align: center; opacity: 0.9;">
-                    Magnetic curves automatically loaded for accurate percentile calculation
-                </div>
+                <div id="percentileDetails" style="margin-top:12px; font-size:11px; text-align:center; opacity:0.9;">Magnetic curves based percentile computation</div>
             </div>
 
             <div id="results" class="results" style="display: none;">
@@ -270,7 +293,11 @@
         </div>
         
         <div class="chart-section">
-            <h2>Growth Chart</h2>
+            <div style="display:flex;gap:10px;margin-bottom:12px;">
+                <button type="button" id="multiTab" style="flex:1;background:#6f42c1;">Multi Charts</button>
+                <button type="button" id="singleTab" style="flex:1;background:#777;">Single Chart</button>
+            </div>
+            <h2 id="chartViewTitle">Multi Charts</h2>
             <div style="margin-bottom: 10px; font-size: 14px;">
                 <span style="color: #ff0000;">● Weight</span> | 
                 <span style="color: #0066cc;">● Height</span> | 
@@ -303,8 +330,11 @@
                     <button id="finishCalibration" style="padding: 8px 15px; background: #17a2b8; display: none;">🎉 Finish Calibration</button>
                 </div>
             </div>
-            <div id="chartContainer">
+            <div id="chartContainer" style="display:none;">
                 <canvas id="chartCanvas"></canvas>
+            </div>
+            <div id="multiChartsContainer" style="margin-top:20px; display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:20px;">
+                <!-- Dynamic multiple charts will be injected here -->
             </div>
             <div id="analysisStatus" style="margin-top: 10px; font-size: 12px; color: #666;">
                 📈 Initializing computer vision analysis...
