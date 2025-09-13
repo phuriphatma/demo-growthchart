@@ -57,6 +57,18 @@
             border-radius: 4px;
             font-size: 14px;
         }
+        /* Constrain numeric field width so they don't stretch excessively on wide screens */
+        .inline-clear-wrap input[type=number] {
+            max-width: 140px; /* prevents horizontal overflow look */
+        }
+        /* Age trio even narrower for readability */
+        .age-inputs .inline-clear-wrap input[type=number] {
+            max-width: 90px;
+        }
+        /* Allow full-width on small devices */
+        @media (max-width: 600px) {
+            .inline-clear-wrap input[type=number] { max-width: 100%; }
+        }
         
         .age-inputs {
             display: flex;
@@ -242,15 +254,15 @@
                     <label>Age:</label>
                     <div class="age-inputs">
                         <div class="inline-clear-wrap">
-                            <input type="number" id="ageYears" placeholder="Years" min="0" max="19">
+                            <input type="number" id="ageYears" placeholder="Years" min="0" max="19" class="narrow-number">
                             <button type="button" class="clear-btn" title="Clear" data-clear-target="ageYears">×</button>
                         </div>
                         <div class="inline-clear-wrap">
-                            <input type="number" id="ageMonths" placeholder="Months" min="0" max="11">
+                            <input type="number" id="ageMonths" placeholder="Months" min="0" max="11" class="narrow-number">
                             <button type="button" class="clear-btn" title="Clear" data-clear-target="ageMonths">×</button>
                         </div>
                         <div class="inline-clear-wrap">
-                            <input type="number" id="ageDays" placeholder="Days" min="0" max="30">
+                            <input type="number" id="ageDays" placeholder="Days" min="0" max="30" class="narrow-number">
                             <button type="button" class="clear-btn" title="Clear" data-clear-target="ageDays">×</button>
                         </div>
                     </div>
@@ -262,7 +274,7 @@
                 <div class="form-group">
                     <label for="weight">Weight (kg):</label>
                     <div class="inline-clear-wrap">
-                        <input type="number" id="weight" step="0.1" min="0">
+                        <input type="number" id="weight" step="0.1" min="0" class="narrow-number">
                         <button type="button" class="clear-btn" title="Clear" data-clear-target="weight">×</button>
                     </div>
                 </div>
@@ -270,7 +282,7 @@
                 <div class="form-group">
                     <label for="height">Height/Length (cm):</label>
                     <div class="inline-clear-wrap">
-                        <input type="number" id="height" step="0.1" min="0">
+                        <input type="number" id="height" step="0.1" min="0" class="narrow-number">
                         <button type="button" class="clear-btn" title="Clear" data-clear-target="height">×</button>
                     </div>
                 </div>
@@ -278,7 +290,7 @@
                 <div class="form-group">
                     <label for="headCircumference">Head Circumference (cm):</label>
                     <div class="inline-clear-wrap">
-                        <input type="number" id="headCircumference" step="0.1" min="0">
+                        <input type="number" id="headCircumference" step="0.1" min="0" class="narrow-number">
                         <button type="button" class="clear-btn" title="Clear" data-clear-target="headCircumference">×</button>
                     </div>
                 </div>
