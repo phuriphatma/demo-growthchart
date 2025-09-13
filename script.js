@@ -1110,19 +1110,57 @@ GrowthChartPlotter.prototype.handleMultiPlot = function() {
             const card=document.createElement('div');
             card.style.background='#fff'; card.style.border='1px solid #ddd'; card.style.borderRadius='8px'; card.style.padding='10px'; card.style.display='flex'; card.style.flexDirection='column'; card.style.gap='6px';
             const title=document.createElement('div'); title.innerHTML=`<strong>${key}</strong> <small style="color:#666;">(${cfg.chartType})</small>`; card.appendChild(title);
-            const canvas=document.createElement('canvas'); canvas.width=600; canvas.height=840; canvas.style.width='100%'; canvas.style.height='auto'; canvas.style.border='1px solid #ccc'; card.appendChild(canvas); const ctx=canvas.getContext('2d');
+            const canvas=document.createElement('canvas');
+            // Temporary initial size; will be resized on image load for higher resolution
+            canvas.width=10; canvas.height=10; canvas.style.border='1px solid #ccc'; card.appendChild(canvas); const ctx=canvas.getContext('2d');
             const img=new Image();
             const p=new Promise(resolve=>{
                 img.onload=async ()=>{
-                    ctx.drawImage(img,0,0,canvas.width,canvas.height);
+                    // Determine target scale for multi-chart preview (higher resolution but not full size)
+                    const targetScale = 0.55; // ~55% of original width/height
+                    const baseWidth = Math.round(img.naturalWidth * targetScale);
+                    const baseHeight = Math.round(img.naturalHeight * targetScale);
+                    canvas.width = baseWidth; // high-res backing store
+                    canvas.height = baseHeight;
+                    // Responsive display: let grid/card define width; maintain aspect ratio
+                    canvas.style.width = '100%';
+                    canvas.style.maxWidth = baseWidth + 'px';
+                    canvas.style.height = 'auto';
+                    canvas.style.display = 'block';
+                    ctx.clearRect(0,0,baseWidth,baseHeight);
+                    ctx.drawImage(img,0,0,baseWidth,baseHeight);
                     const mapLinear=(val,v1,p1,v2,p2)=>{ const slope=(p2-p1)/(v2-v1); return p1 + slope*(val - v1); };
                     let x, weightY=null, heightY=null;
                     if (cfg.chartType==='WFH') { if(!isNaN(height)&&!isNaN(weight)){ x=mapLinear(height,cfg.heightRef1,cfg.heightXRef1,cfg.heightRef2,cfg.heightXRef2); weightY=mapLinear(weight,cfg.weightRef1,cfg.weightYRef1,cfg.weightRef2,cfg.weightYRef2);} }
                     else if (cfg.chartType==='HC') { if(!isNaN(headCircumference)){ x=mapLinear(age,cfg.ageRef1,cfg.headXRef1,cfg.ageRef2,cfg.headXRef2); weightY=mapLinear(headCircumference,cfg.headRef1,cfg.headYRef1,cfg.headRef2,cfg.headYRef2);} }
                     else { if(!isNaN(weight)&&!isNaN(height)){ x=mapLinear(age,cfg.ageRef1,cfg.weightXRef1,cfg.ageRef2,cfg.weightXRef2); weightY=mapLinear(weight,cfg.weightRef1,cfg.weightYRef1,cfg.weightRef2,cfg.weightYRef2); heightY=mapLinear(height,cfg.heightRef1,cfg.heightYRef1,cfg.heightRef2,cfg.heightYRef2);} }
                     const curves=await loadCurvesForChartKey(key);
-                    if(curves){ ctx.lineWidth=1.5; ctx.globalAlpha=0.75; const percentileColors={'P3':'#800080','P10':'#ff00ff','P25':'#00ffff','P50':'#00ff00','P75':'#ffff00','P90':'#ffa500','P97':'#ff0000'}; for(const c of Object.values(curves)){ if(c.type==='head'&&cfg.chartType!=='HC') continue; if(c.type==='height'&&cfg.chartType==='WFH') continue; ctx.beginPath(); for(let i=0;i<c.points.length;i++){ const px=c.points[i].x*(canvas.width/img.naturalWidth); const py=c.points[i].y*(canvas.height/img.naturalHeight); if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);} ctx.strokeStyle=percentileColors[c.percentile]||'#888'; ctx.stroke(); } ctx.globalAlpha=1; }
-                    if(typeof x!=='undefined' && weightY!==null){ const scaledX = x * (canvas.width / this.originalWidth); const scaledWeightY=weightY*(canvas.height/ this.originalHeight); ctx.fillStyle=(cfg.chartType==='HC')?'#800080':'#ff0000'; ctx.beginPath(); ctx.arc(scaledX,scaledWeightY,4,0,2*Math.PI); ctx.fill(); if(cfg.chartType==='AGE' && heightY!==null){ const scaledHeightY=heightY*(canvas.height/ this.originalHeight); ctx.fillStyle='#0066cc'; ctx.beginPath(); ctx.arc(scaledX,scaledHeightY,4,0,2*Math.PI); ctx.fill(); ctx.strokeStyle='#666'; ctx.setLineDash([2,2]); ctx.beginPath(); ctx.moveTo(scaledX,scaledWeightY); ctx.lineTo(scaledX,scaledHeightY); ctx.stroke(); ctx.setLineDash([]);} }
+                    if(curves){
+                        ctx.lineWidth=1.4; ctx.globalAlpha=0.82; const percentileColors={'P3':'#800080','P10':'#ff00ff','P25':'#00ffff','P50':'#00ff00','P75':'#ffff00','P90':'#ffa500','P97':'#ff0000'};
+                        for(const c of Object.values(curves)){
+                            if(c.type==='head'&&cfg.chartType!=='HC') continue; if(c.type==='height'&&cfg.chartType==='WFH') continue;
+                            ctx.beginPath();
+                            for(let i=0;i<c.points.length;i++){
+                                const px=c.points[i].x*(canvas.width/img.naturalWidth);
+                                const py=c.points[i].y*(canvas.height/img.naturalHeight);
+                                if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+                            }
+                            ctx.strokeStyle=percentileColors[c.percentile]||'#888';
+                            ctx.stroke();
+                        }
+                        ctx.globalAlpha=1;
+                    }
+                    if(typeof x!=='undefined' && weightY!==null){
+                        const scaledX = x * (canvas.width / img.naturalWidth);
+                        const scaledWeightY=weightY*(canvas.height/ img.naturalHeight);
+                        ctx.fillStyle=(cfg.chartType==='HC')?'#800080':'#ff0000';
+                        ctx.beginPath(); ctx.arc(scaledX,scaledWeightY,5,0,2*Math.PI); ctx.fill();
+                        if(cfg.chartType==='AGE' && heightY!==null){
+                            const scaledHeightY=heightY*(canvas.height/ img.naturalHeight);
+                            ctx.fillStyle='#0066cc'; ctx.beginPath(); ctx.arc(scaledX,scaledHeightY,5,0,2*Math.PI); ctx.fill();
+                            ctx.strokeStyle='#666'; ctx.setLineDash([2,2]); ctx.beginPath(); ctx.moveTo(scaledX,scaledWeightY); ctx.lineTo(scaledX,scaledHeightY); ctx.stroke(); ctx.setLineDash([]);
+                        }
+                    }
                     let weightPct=null, heightPct=null; if(curves && typeof x!=='undefined' && weightY!==null){ if(cfg.chartType==='HC'){ weightPct=calculatePercentileFromCurves(curves,x,weightY,'head'); } else { weightPct=calculatePercentileFromCurves(curves,x,weightY,'weight'); if(cfg.chartType==='AGE' && heightY!==null){ heightPct=calculatePercentileFromCurves(curves,x,heightY,'height'); } } }
                     const metricsRow=document.createElement('div'); metricsRow.style.display='flex'; metricsRow.style.flexWrap='wrap'; metricsRow.style.gap='6px';
                     const buildBadge=(label,result)=>{ if(!result) return null; let text; if(result.type==='extreme'&&result.displayPercentile) text=`${label}: ${result.displayPercentile}`; else { text=`${label}: P${result.percentile.toFixed(1)}`; if(result.type==='range'||result.type==='interpolated_with_range') text+=` (${result.range})`; } const badge=document.createElement('span'); badge.textContent=text; badge.style.fontSize='11px'; badge.style.padding='3px 6px'; badge.style.borderRadius='12px'; badge.style.background='#eef2f7'; badge.style.border='1px solid #d0d7de'; badge.style.lineHeight='1.2'; const accent=label.startsWith('W/H')?'#6f42c1':(label.startsWith('Head')?'#800080':(label.startsWith('Height')?'#0066cc':'#ff0000')); badge.style.boxShadow=`inset 0 0 0 2px ${accent}20`; if(result.percentile!==undefined){ const p=result.percentile; if(p<3||p>97) badge.style.background='#ffe5e5'; else if(p<10||p>90) badge.style.background='#ffeccc'; else if(p>=25&&p<=75) badge.style.background='#e2f7e2'; } return badge; };
