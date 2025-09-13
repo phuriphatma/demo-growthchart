@@ -36,8 +36,18 @@ class CurveCalibrationManager {
     setupEventListeners() {
         // Automatically load magnetic curves when the page loads
         setTimeout(() => {
-            this.loadMagneticCurves();
+            this.loadCurvesForSex('Girl'); // Default to Girl curves to showcase new feature
         }, 1000); // Small delay to ensure page is fully loaded
+    }
+    
+    loadCurvesForSex(sex) {
+        // Load curves for specific sex
+        const config = CHART_CONFIGS[sex];
+        if (config && config.curvesDataSrc) {
+            this.loadMagneticCurves(config.curvesDataSrc, sex);
+        } else {
+            console.error(`No curve data configuration found for ${sex}`);
+        }
     }
 
     startCalibration() {
@@ -730,53 +740,138 @@ class CurveCalibrationManager {
         return exportData;
     }
 
-    async loadMagneticCurves() {
+    async loadMagneticCurves(curvesDataSrc = './magnetic_curves_webapp.json', sex = 'Boy') {
         // Load manually traced magnetic curves and integrate them
         
         try {
-            console.log("🧲 Loading magnetic traced curves...");
+            console.log(`🧲 Loading magnetic traced curves for ${sex}...`);
             
             // Fetch the magnetic curves data
-            const response = await fetch('./magnetic_curves_webapp.json');
+            const response = await fetch(curvesDataSrc);
             if (!response.ok) {
                 throw new Error(`Failed to load magnetic curves data: ${response.status}`);
             }
             
-            const magneticData = await response.json();
-            console.log("📊 Magnetic curves data loaded:", magneticData);
-            
-            // Convert magnetic curves to our calibration format
+            const rawData = await response.json();
+            console.log(`📊 Raw curve data loaded for ${sex}:`, rawData);
+
+            // Normalize dataset structure
+            // Expected original structure (boys): { curves: { 'height-P97': {points:[...] ...} } }
+            // Girls file appears to provide: { curves: [ [ [x,y], ... ], [ ... ] ] } without metadata
+            let normalizedCurves = {};
+            if (rawData.curves) {
+                if (Array.isArray(rawData.curves)) {
+                    const arr = rawData.curves;
+                    const total = arr.length;
+                    const chartConfigs = typeof CHART_CONFIGS !== 'undefined' ? CHART_CONFIGS : window.CHART_CONFIGS;
+                    const sexConfig = chartConfigs ? chartConfigs[sex] : null;
+                    const orderMeta = sexConfig && sexConfig.curveArrayOrder ? sexConfig.curveArrayOrder : null;
+
+                    const hasHeadOnly = orderMeta && orderMeta.head && Object.keys(orderMeta).length === 1; // HC chart
+                    const expectedTotal = hasHeadOnly
+                        ? orderMeta.head.length
+                        : (orderMeta && orderMeta.height && orderMeta.weight
+                            ? orderMeta.height.length + orderMeta.weight.length
+                            : null);
+
+                    if (orderMeta && expectedTotal === total) {
+                        if (hasHeadOnly) {
+                            for (let i = 0; i < orderMeta.head.length; i++) {
+                                const pct = orderMeta.head[i];
+                                normalizedCurves[`head-${pct}`] = { points: arr[i], percentile: pct, type: 'head' };
+                            }
+                            console.log(`ℹ️ Applied explicit head curveArrayOrder mapping for ${sex}`);
+                        } else {
+                            // height + weight mapping
+                            for (let i = 0; i < orderMeta.height.length; i++) {
+                                const pct = orderMeta.height[i];
+                                normalizedCurves[`height-${pct}`] = { points: arr[i], percentile: pct, type: 'height' };
+                            }
+                            for (let i = 0; i < orderMeta.weight.length; i++) {
+                                const pct = orderMeta.weight[i];
+                                normalizedCurves[`weight-${pct}`] = { points: arr[orderMeta.height.length + i], percentile: pct, type: 'weight' };
+                            }
+                            console.log(`ℹ️ Applied explicit curveArrayOrder mapping for ${sex}`);
+                        }
+                    } else {
+                        // Heuristics / fallback
+                        if (hasHeadOnly) {
+                            // If counts mismatch, still map sequentially as head curves
+                            arr.forEach((curvePts, idx) => {
+                                const pct = orderMeta && orderMeta.head[idx] ? orderMeta.head[idx] : `P50`;
+                                normalizedCurves[`head-${pct}`] = { points: curvePts, percentile: pct, type: 'head' };
+                            });
+                            console.warn(`⚠️ Head curve count mismatch for ${sex}; mapped sequentially.`);
+                        } else {
+                            const pctOrderHeight = ['P97','P90','P75','P50','P25','P10','P3'];
+                            const pctOrderWeight = ['P3','P10','P25','P50','P75','P90','P97'];
+                            if (total === 14) {
+                                for (let i=0;i<7;i++) {
+                                    normalizedCurves[`height-${pctOrderHeight[i]}`] = { points: arr[i], percentile: pctOrderHeight[i], type: 'height' };
+                                }
+                                for (let i=0;i<7;i++) {
+                                    normalizedCurves[`weight-${pctOrderWeight[i]}`] = { points: arr[7+i], percentile: pctOrderWeight[i], type: 'weight' };
+                                }
+                                console.log(`ℹ️ Applied heuristic curve mapping for ${sex}`);
+                            } else {
+                                arr.forEach((curvePts, idx) => {
+                                    const type = idx < total/2 ? 'height' : 'weight';
+                                    normalizedCurves[`${type}-curve-${idx}`] = { points: curvePts, percentile: 'P50', type };
+                                });
+                                console.warn(`⚠️ Fallback generic mapping used for ${sex}; unexpected curve count ${total}`);
+                            }
+                        }
+                    }
+                } else {
+                    normalizedCurves = rawData.curves; // already object
+                }
+            } else {
+                throw new Error('Curves key missing in dataset');
+            }
+
+            // Convert normalized curves to internal format
             this.calibrationPoints = {};
             this.fittedCurves = {};
-            
             let loadedCount = 0;
-            
-            for (const [curveId, curveData] of Object.entries(magneticData.curves)) {
-                // Convert magnetic curve points to our format
-                const points = curveData.points.map(point => ({
-                    x: point[0],
-                    y: point[1]
-                }));
-                
-                // Store as fitted curve
+            for (const [curveId, curveData] of Object.entries(normalizedCurves)) {
+                const points = (curveData.points || curveData).map(pt => ({ x: pt[0], y: pt[1] }));
+                let inferredType = curveData.type;
+                if (!inferredType) {
+                    if (curveId.startsWith('height')) inferredType = 'height';
+                    else if (curveId.startsWith('weight')) inferredType = 'weight';
+                    else if (curveId.startsWith('head')) inferredType = 'head';
+                    else inferredType = 'weight';
+                }
                 this.fittedCurves[curveId] = {
-                    points: points,
+                    points,
                     method: 'magnetic_tracing',
-                    confidence: 1.0, // Manual tracing has high confidence
+                    confidence: 1.0,
                     pointCount: points.length,
                     detectionMethod: 'Manual Magnetic Tracing',
-                    percentile: curveData.percentile,
-                    type: curveData.type,
-                    source: 'magnetic_curves'
+                    percentile: curveData.percentile || 'P50',
+                    type: inferredType,
+                    source: 'magnetic_curves',
+                    sex
                 };
-                
-                // Initialize empty calibration points for this curve
                 this.calibrationPoints[curveId] = [];
-                
                 loadedCount++;
             }
-            
-            console.log(`🎉 Successfully loaded ${loadedCount} magnetic curves`);
+
+            console.log(`🎉 Successfully normalized and loaded ${loadedCount} curves for ${sex}`);
+            // Summary of weight curve order
+            const weightIds = Object.keys(this.fittedCurves).filter(id => id.startsWith('weight-')).sort((a,b)=>{
+                // Sort by percentile numeric descending for readability
+                const pa=parseInt(a.split('-')[1].substring(1));
+                const pb=parseInt(b.split('-')[1].substring(1));
+                return pb-pa;
+            });
+            console.log(`📑 Weight curve IDs (descending):`, weightIds);
+            const headIds = Object.keys(this.fittedCurves).filter(id => id.startsWith('head-'));
+            if (headIds.length) {
+                console.log(`🧠 Head curve IDs:`, headIds);
+            }
+            const statusEl = document.getElementById('analysisStatus');
+            if (statusEl) statusEl.innerHTML = `✅ ${sex} curves loaded (${loadedCount})`;
             
             // Notify the chart plotter that curves are ready
             if (this.chartPlotter && this.chartPlotter.drawChart) {
@@ -785,6 +880,8 @@ class CurveCalibrationManager {
             
         } catch (error) {
             console.error("❌ Error loading magnetic curves:", error);
+            const statusEl = document.getElementById('analysisStatus');
+            if (statusEl) statusEl.innerHTML = `❌ Failed loading curves: ${error.message}`;
         }
     }
     
@@ -909,50 +1006,124 @@ class CurveCalibrationManager {
         if (matches.length === 0) {
             return null;
         }
-        
-        // Sort by distance
+        // Sort by distance first so we can decide if we are effectively ON a curve before any extreme classification
         matches.sort((a, b) => a.distance - b.distance);
-        
-        // If very close to a curve (within 15 pixels), return that percentile
         const closest = matches[0];
-        if (closest.distance < 15) {
-            console.log(`📍 Point is very close to ${closest.percentile} (distance: ${closest.distance.toFixed(1)}px)`);
-            return {
-                percentile: closest.percentileNum,
-                confidence: 'high',
-                type: 'exact',
-                curve: closest.curveId,
-                distance: closest.distance
-            };
+
+        // Thresholds (tunable)
+        const EXACT_DISTANCE_THRESHOLD = 15;      // legacy broad threshold
+        const ABSOLUTE_EXACT_DISTANCE = 7;         // strict exact threshold
+        const RELATIVE_MAX_EXACT_FRACTION = 0.22;  // max fraction of gap to still call exact
+        const EXTREME_MARGIN = 8;                  // margin for extreme classification outside band
+
+        // Determine potential extremes only after ruling out an exact match
+        const yValues = matches.map(m => m.curveY);
+        const minY = Math.min(...yValues); // visually top
+        const maxY = Math.max(...yValues); // visually bottom
+
+        // Dynamically determine orientation for measurement type.
+        // orientation.sign: +1 means higher percentile has greater Y (downwards); -1 means higher percentile has smaller Y (upwards)
+        let orientationSign = -1; // default similar to height assumption
+        if (measurementType === 'weight') {
+            const p97 = matches.find(m => m.percentileNum === 97);
+            const p3 = matches.find(m => m.percentileNum === 3);
+            if (p97 && p3) {
+                orientationSign = (p97.curveY > p3.curveY) ? +1 : -1;
+                console.log(`🧭 Weight orientation detected: P97.y=${p97.curveY.toFixed(1)} vs P3.y=${p3.curveY.toFixed(1)} -> sign=${orientationSign}`);
+            }
         }
+
+    if (measurementType === 'height' || measurementType === 'head') {
+            // height: higher percentile (P97) should have smaller y values (toward top). Extreme only if well above.
+            if (y < (minY - EXTREME_MARGIN)) {
+                console.log(`⏫ Point above highest ${measurementType} curve by more than margin: showing >P97`);
+                return {
+                    percentile: 97,
+                    displayPercentile: '>P97',
+                    confidence: 'medium',
+                    type: 'extreme',
+                    extreme: 'above',
+                    curve: matches.find(m => m.percentileNum === 97)?.curveId || closest.curveId,
+                    distance: Math.abs(y - minY)
+                };
+            }
+            if (y > (maxY + EXTREME_MARGIN)) {
+                console.log(`⏬ Point below lowest ${measurementType} curve by more than margin: showing <P3`);
+                return {
+                    percentile: 3,
+                    displayPercentile: '<P3',
+                    confidence: 'medium',
+                    type: 'extreme',
+                    extreme: 'below',
+                    curve: matches.find(m => m.percentileNum === 3)?.curveId || closest.curveId,
+                    distance: Math.abs(y - maxY)
+                };
+            }
+    } else if (measurementType === 'weight') {
+            // Use detected orientation
+            if (orientationSign === +1) {
+                // Higher percentile lower on chart (bigger Y)
+                if (y > (maxY + EXTREME_MARGIN)) {
+                    console.log(`⏬ Point heavier than P97 by margin: >P97`);
+                    return { percentile: 97, displayPercentile: '>P97', confidence: 'medium', type: 'extreme', extreme: 'above', curve: matches.find(m=>m.percentileNum===97)?.curveId||closest.curveId, distance: Math.abs(y-maxY) };
+                }
+                if (y < (minY - EXTREME_MARGIN)) {
+                    console.log(`⏫ Point lighter than P3 by margin: <P3`);
+                    return { percentile: 3, displayPercentile: '<P3', confidence: 'medium', type: 'extreme', extreme: 'below', curve: matches.find(m=>m.percentileNum===3)?.curveId||closest.curveId, distance: Math.abs(y-minY) };
+                }
+            } else {
+                // Higher percentile higher on chart (smaller Y) – same logic as height but for weight
+                if (y < (minY - EXTREME_MARGIN)) {
+                    console.log(`⏫ Point above (better than) highest weight curve by margin: >P97`);
+                    return { percentile: 97, displayPercentile: '>P97', confidence: 'medium', type: 'extreme', extreme: 'above', curve: matches.find(m=>m.percentileNum===97)?.curveId||closest.curveId, distance: Math.abs(y-minY) };
+                }
+                if (y > (maxY + EXTREME_MARGIN)) {
+                    console.log(`⏬ Point below (lower than) lowest weight curve by margin: <P3`);
+                    return { percentile: 3, displayPercentile: '<P3', confidence: 'medium', type: 'extreme', extreme: 'below', curve: matches.find(m=>m.percentileNum===3)?.curveId||closest.curveId, distance: Math.abs(y-maxY) };
+                }
+            }
+        }
+        
+    // Not extreme: continue with interpolation / exact determination below
         
         // Find the two curves that bracket the point vertically
         let upperCurve = null;
         let lowerCurve = null;
         
-        for (const match of matches) {
-            if (measurementType === 'height') {
-                // For height: higher percentile = lower Y value
-                if (match.curveY <= y && (upperCurve === null || match.curveY > upperCurve.curveY)) {
-                    upperCurve = match;
-                }
-                if (match.curveY >= y && (lowerCurve === null || match.curveY < lowerCurve.curveY)) {
-                    lowerCurve = match;
-                }
+    for (const match of matches) {
+            if (measurementType === 'height' || (measurementType === 'weight' && orientationSign === -1)) {
+                // Higher percentile => smaller Y
+                if (match.curveY <= y && (upperCurve === null || match.curveY > upperCurve.curveY)) upperCurve = match; // just above point
+                if (match.curveY >= y && (lowerCurve === null || match.curveY < lowerCurve.curveY)) lowerCurve = match; // just below point
             } else {
-                // For weight: higher percentile = higher Y value  
-                if (match.curveY >= y && (upperCurve === null || match.curveY < upperCurve.curveY)) {
-                    upperCurve = match;
-                }
-                if (match.curveY <= y && (lowerCurve === null || match.curveY > lowerCurve.curveY)) {
-                    lowerCurve = match;
-                }
+                // orientationSign +1: higher percentile => larger Y
+                if (match.curveY >= y && (upperCurve === null || match.curveY < upperCurve.curveY)) upperCurve = match; // just below visually
+                if (match.curveY <= y && (lowerCurve === null || match.curveY > lowerCurve.curveY)) lowerCurve = match; // just above visually
             }
         }
         
+        // Determine yRange for relative exact decision
+        let yRange = null;
+        if (upperCurve && lowerCurve && upperCurve.curveId !== lowerCurve.curveId) {
+            yRange = Math.abs(lowerCurve.curveY - upperCurve.curveY);
+        }
+
+        // Decide if we should classify as exact AFTER finding bracketing so we can use relative distance
+        if (closest.distance <= ABSOLUTE_EXACT_DISTANCE) {
+            return { percentile: closest.percentileNum, confidence: 'high', type: 'exact', curve: closest.curveId, distance: closest.distance };
+        }
+        if (yRange && closest.distance <= EXACT_DISTANCE_THRESHOLD) {
+            const fraction = closest.distance / yRange;
+            if (fraction <= RELATIVE_MAX_EXACT_FRACTION) {
+                console.log(`🎯 Exact by relative fraction: dist=${closest.distance.toFixed(1)} yRange=${yRange.toFixed(1)} frac=${fraction.toFixed(2)}`);
+                return { percentile: closest.percentileNum, confidence: 'high', type: 'exact', curve: closest.curveId, distance: closest.distance };
+            } else {
+                console.log(`ℹ️ Not exact (fraction ${fraction.toFixed(2)} > ${RELATIVE_MAX_EXACT_FRACTION}) -> will interpolate/range`);
+            }
+        }
+
         // Check if point is bracketed between two curves
         if (upperCurve && lowerCurve && upperCurve.curveId !== lowerCurve.curveId) {
-            const yRange = Math.abs(lowerCurve.curveY - upperCurve.curveY);
             if (yRange > 0) {
                 const distanceToUpper = Math.abs(y - upperCurve.curveY);
                 const distanceToLower = Math.abs(y - lowerCurve.curveY);
@@ -961,59 +1132,36 @@ class CurveCalibrationManager {
                 // show it as a range between the two curves, but still calculate interpolated value
                 if (distanceToUpper > 20 && distanceToLower > 20) {
                     console.log(`📊 Point is between ${upperCurve.percentile} and ${lowerCurve.percentile} (range)`);
-                    
-                    // Calculate interpolated percentile even for range results
-                    const ratio = Math.abs(y - upperCurve.curveY) / yRange;
-                    
-                    let interpolatedPercentile;
-                    if (measurementType === 'height') {
-                        interpolatedPercentile = upperCurve.percentileNum - ratio * (upperCurve.percentileNum - lowerCurve.percentileNum);
-                    } else {
-                        interpolatedPercentile = upperCurve.percentileNum + ratio * (lowerCurve.percentileNum - upperCurve.percentileNum);
-                    }
-                    
-                    // Create range in ascending percentile order with P25-50 format
-                    const lowerPercentile = measurementType === 'height' ? lowerCurve.percentile : upperCurve.percentile;
-                    const higherPercentile = measurementType === 'height' ? upperCurve.percentile : lowerCurve.percentile;
-                    const rangeFormat = `${lowerPercentile}-${higherPercentile.substring(1)}`; // Remove P from second percentile
-                    
-                    return {
-                        percentile: interpolatedPercentile, // Include interpolated value for detailed display
-                        confidence: 'high',
-                        type: 'range',
-                        range: rangeFormat,
-                        upperCurve: upperCurve.curveId,
-                        lowerCurve: lowerCurve.curveId,
-                        distanceToUpper: distanceToUpper,
-                        distanceToLower: distanceToLower
-                    };
-                } else {
-                    // Calculate interpolated percentile and return both range and specific value
-                    const ratio = Math.abs(y - upperCurve.curveY) / yRange;
-                    
-                    let interpolatedPercentile;
-                    if (measurementType === 'height') {
-                        interpolatedPercentile = upperCurve.percentileNum - ratio * (upperCurve.percentileNum - lowerCurve.percentileNum);
-                    } else {
-                        interpolatedPercentile = upperCurve.percentileNum + ratio * (lowerCurve.percentileNum - upperCurve.percentileNum);
-                    }
-                    
-                    console.log(`📊 Point interpolated between ${upperCurve.percentile} and ${lowerCurve.percentile}: P${interpolatedPercentile.toFixed(1)}`);
-                    
-                    // Create range in ascending percentile order with P25-50 format
-                    const lowerPercentile = measurementType === 'height' ? lowerCurve.percentile : upperCurve.percentile;
-                    const higherPercentile = measurementType === 'height' ? upperCurve.percentile : lowerCurve.percentile;
-                    const rangeFormat = `${lowerPercentile}-${higherPercentile.substring(1)}`; // Remove P from second percentile
-                    
-                    return {
-                        percentile: interpolatedPercentile,
-                        confidence: 'high',
-                        type: 'interpolated_with_range',
-                        range: rangeFormat,
-                        upperCurve: upperCurve.curveId,
-                        lowerCurve: lowerCurve.curveId
-                    };
                 }
+
+                // Calculate interpolated percentile (same math either branch now unified)
+                const ratio = Math.abs(y - upperCurve.curveY) / yRange;
+                let interpolatedPercentile;
+                if (measurementType === 'height') {
+                    interpolatedPercentile = upperCurve.percentileNum - ratio * (upperCurve.percentileNum - lowerCurve.percentileNum);
+                } else {
+                    interpolatedPercentile = orientationSign === -1
+                        ? upperCurve.percentileNum - ratio * (upperCurve.percentileNum - lowerCurve.percentileNum)
+                        : upperCurve.percentileNum + ratio * (lowerCurve.percentileNum - upperCurve.percentileNum);
+                }
+
+                // Always produce ascending range Pmin-max (second without leading P)
+                const pA = upperCurve.percentileNum;
+                const pB = lowerCurve.percentileNum;
+                const low = Math.min(pA, pB);
+                const high = Math.max(pA, pB);
+                const rangeFormat = `P${low}-${high}`;
+                const rangeType = (distanceToUpper > 20 && distanceToLower > 20) ? 'range' : 'interpolated_with_range';
+                return {
+                    percentile: interpolatedPercentile,
+                    confidence: 'high',
+                    type: rangeType,
+                    range: rangeFormat,
+                    upperCurve: upperCurve.curveId,
+                    lowerCurve: lowerCurve.curveId,
+                    distanceToUpper: distanceToUpper,
+                    distanceToLower: distanceToLower
+                };
             }
         }
         

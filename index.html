@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, maximum-scale=3.0">
-    <title>Boys Growth Chart Plotter</title>
+    <title>Growth Chart Plotter - Boys & Girls (2-19 years)</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -197,7 +197,7 @@
     </style>
 </head>
 <body>
-    <h1>Boys Growth Chart Plotter (2-19 years)</h1>
+    <h1>Growth Chart Plotter</h1>
     
     <div class="container">
         <div class="form-section">
@@ -207,8 +207,14 @@
                     <label for="sex">Sex:</label>
                     <select id="sex" required>
                         <option value="">Select...</option>
-                        <option value="Boy" selected>Boy</option>
-                        <option value="Girl">Girl</option>
+                        <option value="Boy" selected>Boy (2-19y)</option>
+                        <option value="Boy_WFH">Boy WFH (2-19y)</option>
+                        <option value="Boy_0_2">Boy (0-2y)</option>
+                        <option value="Boy_HC">Boy Head Circ (0-5y)</option>
+                        <option value="Girl">Girl (2-19y)</option>
+                        <option value="Girl_HC">Girl Head Circ (0-5y)</option>
+                        <option value="Girl_WFH">Girl WFH (2-19y)</option>
+                        <option value="Girl_0_2">Girl (0-2y)</option>
                     </select>
                 </div>
                 
@@ -241,7 +247,7 @@
             
             <!-- Percentile Display Panel -->
             <div id="percentilePanel" style="display: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px; border-radius: 10px; margin-top: 15px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">
-                <h3 style="margin-top: 0; text-align: center; font-size: 18px;">📊 Percentile Analysis</h3>
+                <h3 id="percentileHeader" style="margin-top: 0; text-align: center; font-size: 18px;">📊 Percentile Analysis</h3>
                 <div style="display: flex; gap: 15px; justify-content: space-around; flex-wrap: wrap;">
                     <div style="text-align: center; flex: 1; min-width: 120px;">
                         <div style="font-size: 12px; opacity: 0.9; margin-bottom: 5px;">HEIGHT</div>
