@@ -353,15 +353,17 @@ function interpolateYAtXLocal(points, targetX) {
 
 class GrowthChartPlotter {
     constructor() {
-        this.canvas = document.getElementById('chartCanvas');
-        this.ctx = this.canvas.getContext('2d');
-        this.chartImage = new Image();
+        // Single-chart mode removed; keep minimal properties for percentile calculations if needed
+        this.canvas = null;
+        this.ctx = null;
+        this.chartImage = null;
         this.plotPoints = [];
         this.showCurves = true;
         this.calibrationManager = null;
-        this.currentSex = 'Girl'; // Default to Girl to showcase new feature
-        
-        this.initializeChart();
+        this.currentSex = 'Girl';
+        this.originalWidth = 0;
+        this.originalHeight = 0;
+        // Load curves asynchronously; multi-plot uses per-chart loading
         this.setupEventListeners();
         this.preloadExampleData();
     }
@@ -375,44 +377,7 @@ class GrowthChartPlotter {
     }
     
     loadChartForCurrentSex() {
-        const config = this.getCurrentConfig();
-        
-        this.chartImage.onload = async () => {
-            // Set the actual canvas size to the image dimensions
-            this.originalWidth = this.chartImage.width;
-            this.originalHeight = this.chartImage.height;
-            
-            this.resizeCanvas();
-            this.drawChart();
-            
-            console.log(`${this.currentSex} chart loaded successfully!`);
-            
-            // Update status
-            document.getElementById('analysisStatus').innerHTML = 
-                `✅ ${this.currentSex} chart loaded! Magnetic curves will load automatically.`;
-            
-            // Reload curves for the new sex
-            if (this.calibrationManager) {
-                this.calibrationManager.loadCurvesForSex(this.currentSex);
-            }
-            
-            // Add resize listener for responsive behavior
-            window.addEventListener('resize', () => {
-                this.resizeCanvas();
-                this.drawChart();
-            });
-        };
-        
-        this.chartImage.onerror = () => {
-            console.error(`Failed to load ${this.currentSex} chart image`);
-            // Create a fallback canvas
-            this.originalWidth = 2500;
-            this.originalHeight = 3500;
-            this.resizeCanvas();
-            this.drawFallbackChart();
-        };
-        
-        this.chartImage.src = config.imageSrc;
+        // Retained for backward compatibility; no action needed since single view removed
     }
     
     resizeCanvas() {
@@ -573,43 +538,13 @@ class GrowthChartPlotter {
         const debouncedRefresh = debounce(()=> this.refreshViews());
         measurementInputs.forEach(inp=> inp && inp.addEventListener('input', debouncedRefresh));
 
-        // Tabs logic
-        const multiTab = document.getElementById('multiTab');
-        const singleTab = document.getElementById('singleTab');
-        multiTab.addEventListener('click', ()=>{
-            multiTab.style.background='#6f42c1'; singleTab.style.background='#777';
-            document.getElementById('multiChartsContainer').style.display='grid';
-            document.getElementById('chartContainer').style.display='none';
-            document.getElementById('chartViewTitle').textContent='Multi Charts';
-            this.handleMultiPlot();
-        });
-        singleTab.addEventListener('click', ()=>{
-            singleTab.style.background='#6f42c1'; multiTab.style.background='#777';
-            document.getElementById('multiChartsContainer').style.display='none';
-            document.getElementById('chartContainer').style.display='block';
-            document.getElementById('chartViewTitle').textContent='Single Chart';
-            this.plotData();
-        });
-        // Toggle curves button (single chart view relevance)
-        document.getElementById('toggleCurves').addEventListener('click', () => {
-            this.showCurves = !this.showCurves;
-            this.drawChart();
-            
-            const button = document.getElementById('toggleCurves');
-            if (this.showCurves) {
-                button.textContent = 'Hide Percentile Curves';
-                button.style.backgroundColor = '#dc3545'; // Red for hide
-            } else {
-                button.textContent = 'Show Percentile Curves';
-                button.style.backgroundColor = '#28a745'; // Green for show
-            }
-        });
+        // With only multi-chart mode remaining, trigger plot immediately on load & on changes
+        this.handleMultiPlot();
 
     }
 
     refreshViews() {
-        const multiActive = document.getElementById('multiChartsContainer').style.display !== 'none';
-        if (multiActive) this.handleMultiPlot(); else this.plotData();
+    this.handleMultiPlot();
     }
     preloadExampleData() {
         // Pre-fill with the example data - use Girl Age 2-19 to showcase new feature
@@ -789,7 +724,7 @@ class GrowthChartPlotter {
             timestamp: new Date()
         });
 
-        this.drawChart();
+    // single-chart view removed
         this.displayResults(x, weightY, heightY, age, weight, height, headCircumference, weightPercentile, heightPercentile);
     }
     
@@ -1028,7 +963,7 @@ class GrowthChartPlotter {
     
     clearPoints() {
         this.plotPoints = [];
-        this.drawChart();
+    // single-chart view removed
         document.getElementById('results').style.display = 'none';
         document.getElementById('percentilePanel').style.display = 'none';
         

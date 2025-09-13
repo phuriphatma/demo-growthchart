@@ -254,8 +254,7 @@
                     <input type="number" id="headCircumference" step="0.1" min="0">
                 </div>
                 
-                <button type="submit">Plot</button>
-                <button type="button" id="multiPlotBtn" style="margin-top:8px;background:#6f42c1;">Multi Plot (All Charts)</button>
+                <button type="button" id="multiPlotBtn" style="margin-top:8px;background:#6f42c1;">Analyze (All Charts)</button>
             </form>
             
             <!-- Percentile Display Panel -->
@@ -293,46 +292,8 @@
         </div>
         
         <div class="chart-section">
-            <div style="display:flex;gap:10px;margin-bottom:12px;">
-                <button type="button" id="multiTab" style="flex:1;background:#6f42c1;">Multi Charts</button>
-                <button type="button" id="singleTab" style="flex:1;background:#777;">Single Chart</button>
-            </div>
-            <h2 id="chartViewTitle">Multi Charts</h2>
-            <div style="margin-bottom: 10px; font-size: 14px;">
-                <span style="color: #ff0000;">● Weight</span> | 
-                <span style="color: #0066cc;">● Height</span> | 
-                <span style="color: #666666;">⋯ Connection line</span>
-                <div style="margin-top: 5px;">
-                    <button id="toggleCurves" style="padding: 6px 12px; font-size: 12px;width:auto; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">Hide Percentile Curves</button>
-                </div>
-            </div>
-            <div id="calibrationPanel" style="display: none; background: #f8f9fa; padding: 10px; border-radius: 4px; margin-bottom: 10px; border: 2px solid #28a745;">
-                <h4 style="margin: 0 0 10px 0;">📍 Manual Curve Calibration</h4>
-                
-                <div id="currentCurveInfo" style="margin: 10px 0; padding: 10px; background: #e3f2fd; border-radius: 5px; display: none;">
-                    <h5 id="currentCurveName" style="margin: 0 0 5px 0;">Height P97 (tallest curve)</h5>
-                    <p style="margin: 0; font-size: 13px;">Click anywhere on this curve to trace it. Click again to adjust until you're satisfied.</p>
-                </div>
-                
-                <div style="margin: 10px 0; padding: 8px; background: #fff3cd; border-radius: 4px; border: 1px solid #ffeaa7;">
-                    <label style="font-size: 13px; display: flex; align-items: center;">
-                        <input type="checkbox" id="autoFitCurves" checked style="margin-right: 8px;">
-                        🎯 Auto-fit to black lines (recommended)
-                    </label>
-                    <p style="margin: 2px 0 0 20px; font-size: 11px; color: #856404;">
-                        Automatically adjusts your points to align with the chart's black curve lines
-                    </p>
-                </div>
-                
-                <div style="margin-top: 10px;">
-                    <button id="startCalibration" style="padding: 8px 15px; margin-right: 10px;">Start Manual Calibration</button>
-                    <button id="nextCurve" style="padding: 8px 15px; margin-right: 10px; background: #28a745; display: none;">✅ Next Curve</button>
-                    <button id="finishCalibration" style="padding: 8px 15px; background: #17a2b8; display: none;">🎉 Finish Calibration</button>
-                </div>
-            </div>
-            <div id="chartContainer" style="display:none;">
-                <canvas id="chartCanvas"></canvas>
-            </div>
+            <h2 style="margin-top:0;">All Charts</h2>
+            <div style="margin-bottom: 6px; font-size: 13px; color:#444;">Automatically generates every applicable chart (Age, W/H, HC) based on inputs.</div>
             <div id="multiChartsContainer" style="margin-top:20px; display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:20px;">
                 <!-- Dynamic multiple charts will be injected here -->
             </div>
