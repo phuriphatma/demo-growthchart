@@ -547,21 +547,11 @@ class GrowthChartPlotter {
     this.handleMultiPlot();
     }
     preloadExampleData() {
-        // Pre-fill with the example data - use Girl Age 2-19 to showcase new feature
-        if (document.getElementById('sexSelect')) document.getElementById('sexSelect').value = 'Girl';
-        if (document.getElementById('chartTypeSelect')) document.getElementById('chartTypeSelect').value = 'age_2_19';
-        // Update hidden combined key
-        const hidden = document.getElementById('sex');
-        hidden.value = 'Girl';
-        this.currentSex = 'Girl';
-        document.getElementById('ageYears').value = '15';
-        document.getElementById('ageMonths').value = '0';
-        document.getElementById('ageDays').value = '0';
-        document.getElementById('weight').value = '55';
-        document.getElementById('height').value = '160';
-        document.getElementById('headCircumference').value = '40.5';
-        
-        // currentSex is already set to 'Girl' in constructor
+        // No prefill now; just ensure hidden key matches current selector defaults
+        if (document.getElementById('sexSelect')) {
+            this.currentSex = document.getElementById('sexSelect').value + (document.getElementById('chartTypeSelect').value==='age_0_2'?'_0_2': document.getElementById('chartTypeSelect').value==='wfh'? '_WFH': document.getElementById('chartTypeSelect').value==='hc'? '_HC': '');
+            document.getElementById('sex').value = this.currentSex.startsWith('Girl')? 'Girl': 'Boy';
+        }
     }
     
     calculateAge() {
@@ -1006,6 +996,26 @@ document.addEventListener('DOMContentLoaded', () => {
             if (window.chartPlotter && typeof window.chartPlotter.handleMultiPlot === 'function') {
                 window.chartPlotter.handleMultiPlot();
             }
+        });
+    }
+    // Clear buttons functionality
+    document.querySelectorAll('[data-clear-target]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetId = btn.getAttribute('data-clear-target');
+            const el = document.getElementById(targetId);
+            if (el) {
+                el.value='';
+                // After clearing, propagate recalculation
+                if (window.chartPlotter) window.chartPlotter.refreshViews();
+            }
+        });
+    });
+    // One-click clear all age inputs
+    const clearAgeAll = document.getElementById('clearAgeAllBtn');
+    if (clearAgeAll) {
+        clearAgeAll.addEventListener('click', () => {
+            ['ageYears','ageMonths','ageDays'].forEach(id=>{ const f=document.getElementById(id); if(f) f.value=''; });
+            if (window.chartPlotter) window.chartPlotter.refreshViews();
         });
     }
 }); // End DOMContentLoaded

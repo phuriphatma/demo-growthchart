@@ -202,6 +202,14 @@
             gap: 6px; 
         }
         .pct-row .pct-pct { white-space: nowrap; }
+        /* Clear button styling */
+        .inline-clear-wrap { position: relative; }
+        .inline-clear-wrap input { padding-right: 26px; }
+        .clear-btn { position:absolute; top:50%; right:4px; transform:translateY(-50%); width:20px; height:20px; border:none; border-radius:50%; background:#e0e0e0; color:#444; font-size:14px; line-height:20px; cursor:pointer; font-weight:bold; display:flex; align-items:center; justify-content:center; }
+        .clear-btn:hover { background:#d0d0d0; }
+        .age-inputs { gap:6px; }
+        .age-inputs .inline-clear-wrap { flex:1; }
+        @media (max-width: 768px){ .inline-clear-wrap input { padding-right:30px; } }
     </style>
 </head>
 <body>
@@ -233,25 +241,46 @@
                 <div class="form-group">
                     <label>Age:</label>
                     <div class="age-inputs">
-                        <input type="number" id="ageYears" placeholder="Years" min="0" max="19">
-                        <input type="number" id="ageMonths" placeholder="Months" min="0" max="11" value="0">
-                        <input type="number" id="ageDays" placeholder="Days" min="0" max="30" value="0">
+                        <div class="inline-clear-wrap">
+                            <input type="number" id="ageYears" placeholder="Years" min="0" max="19">
+                            <button type="button" class="clear-btn" title="Clear" data-clear-target="ageYears">×</button>
+                        </div>
+                        <div class="inline-clear-wrap">
+                            <input type="number" id="ageMonths" placeholder="Months" min="0" max="11">
+                            <button type="button" class="clear-btn" title="Clear" data-clear-target="ageMonths">×</button>
+                        </div>
+                        <div class="inline-clear-wrap">
+                            <input type="number" id="ageDays" placeholder="Days" min="0" max="30">
+                            <button type="button" class="clear-btn" title="Clear" data-clear-target="ageDays">×</button>
+                        </div>
+                    </div>
+                    <div style="margin-top:6px; display:flex; justify-content:flex-end;">
+                        <button type="button" id="clearAgeAllBtn" style="background:#bbb;color:#222;padding:6px 12px;font-size:12px;border-radius:6px;">Clear Age (All)</button>
                     </div>
                 </div>
                 
                 <div class="form-group">
                     <label for="weight">Weight (kg):</label>
-                    <input type="number" id="weight" step="0.1" min="0">
+                    <div class="inline-clear-wrap">
+                        <input type="number" id="weight" step="0.1" min="0">
+                        <button type="button" class="clear-btn" title="Clear" data-clear-target="weight">×</button>
+                    </div>
                 </div>
                 
                 <div class="form-group">
                     <label for="height">Height/Length (cm):</label>
-                    <input type="number" id="height" step="0.1" min="0">
+                    <div class="inline-clear-wrap">
+                        <input type="number" id="height" step="0.1" min="0">
+                        <button type="button" class="clear-btn" title="Clear" data-clear-target="height">×</button>
+                    </div>
                 </div>
                 
                 <div class="form-group">
                     <label for="headCircumference">Head Circumference (cm):</label>
-                    <input type="number" id="headCircumference" step="0.1" min="0">
+                    <div class="inline-clear-wrap">
+                        <input type="number" id="headCircumference" step="0.1" min="0">
+                        <button type="button" class="clear-btn" title="Clear" data-clear-target="headCircumference">×</button>
+                    </div>
                 </div>
                 
                 <button type="button" id="multiPlotBtn" style="margin-top:8px;background:#6f42c1;">Analyze (All Charts)</button>
