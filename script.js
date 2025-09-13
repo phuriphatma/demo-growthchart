@@ -44,20 +44,23 @@ const CHART_CONFIGS = {
         minAge: 2,
         maxAge: 19,
         chartType: 'AGE',
-        // TEMPORARY ANCHORS (borrowed from Girl config as placeholder):
+        // Corrected anchors provided by user:
+        // (Age 2y, Weight 5kg) = (236, 3307)
+        // (Age 19y, Weight 90kg) = (2245, 1454)
+        // (Age 2y, Height 85cm) = (236, 2762)
+        // (Age 19y, Height 190cm) = (2245, 472.5)
         ageRef1: 2,
-        weightRef1: 5,      // Replace with actual boy 2y 5kg pixel anchor if different
+        weightRef1: 5,
         weightXRef1: 236,
         weightYRef1: 3307,
         ageRef2: 19,
         weightRef2: 90,
         weightXRef2: 2245,
-        weightYRef2: 1299,
-        // Height refs (placeholder):
+        weightYRef2: 1454,
         heightRef1: 85,
         heightXRef1: 236,
-        heightYRef1: 2717,
-        heightRef2: 180,
+        heightYRef1: 2762,
+        heightRef2: 190,
         heightXRef2: 2245,
         heightYRef2: 472.5
     },
