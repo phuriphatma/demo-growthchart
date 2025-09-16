@@ -206,6 +206,35 @@
             color: #333;
             margin-top: 0;
         }
+        .tabs {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 15px;
+  gap: 8px;
+}
+
+.tab-btn {
+  padding: 10px 18px;
+  border: none;
+  border-radius: 6px;
+  background: #e0e0e0;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.tab-btn.active {
+  background: #007bff;
+  color: white;
+}
+
+.tab-content {
+  display: none;
+}
+
+.tab-content.active {
+  display: block;
+}
         /* Unified percentile panel row grid so percentile column aligns vertically */
         .pct-row { 
             display: grid; 
@@ -225,8 +254,12 @@
     </style>
 </head>
 <body>
+    <div class="tabs">
+  <button class="tab-btn active" data-tab="growth">📈 Growth Charts</button>
+  <button class="tab-btn" data-tab="milestone">🧩 Development Milestones</button>
+</div>
     <h1>Growth Chart Plotter</h1>
-    
+    <div id="growth" class="tab-content active">
     <div class="container">
         <div class="form-section">
             <h2>Enter Data</h2>
@@ -343,7 +376,14 @@
             </div>
         </div>
     </div>
-
+    </div>
+<div id="milestone" class="tab-content">
+  <h2 style="text-align:center;">Development Milestones</h2>
+  <div style="display:flex;flex-direction:column;align-items:center;gap:15px;">
+    <img src="IMG_5626.jpeg" alt="Milestone 1" style="max-width:100%;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.2);">
+    <img src="IMG_5624.jpeg" alt="Milestone 2" style="max-width:100%;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.2);">
+  </div>
+</div>
     <div style="text-align:center;margin-top:25px;font-size:11px;color:#666;letter-spacing:0.5px;">
         Created by <strong>Ung MDKKU50</strong>
     </div>
@@ -352,4 +392,17 @@
     <script src="curve-calibration.js"></script>
     <script src="script.js"></script>
 </body>
+    <script>
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    // remove active states
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".tab-content").forEach(tc => tc.classList.remove("active"));
+    
+    // activate clicked tab and content
+    btn.classList.add("active");
+    document.getElementById(btn.dataset.tab).classList.add("active");
+  });
+});
+</script>
 </html>
